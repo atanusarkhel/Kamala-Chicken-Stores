@@ -179,6 +179,52 @@ def confirm_edit_dialog():
         st.session_state.pop("pending_edit", None)
         st.rerun()
 
+
+# ---------------------------------------------------------------------------
+# DELETE LOGIC — removes an entry from both input and output tables
+# ---------------------------------------------------------------------------
+def delete_entry(input_id: int):
+    supabase.table(OUTPUT_TABLE).delete().eq("input_id", input_id).execute()
+    supabase.table(INPUT_TABLE).delete().eq("id", input_id).execute()
+
+
+def render_delete_section(rows: list, key_prefix: str):
+    """Admin-only: pick an entry and delete it from both tables."""
+    if not rows:
+        return
+
+    with st.expander("🗑️ Delete an entry"):
+        options = {
+            f"ID {r['id']} — {r['entry_date']} — revenue {r['revenue']} "
+            f"(by {r['submitted_by']})": r
+            for r in rows
+        }
+        choice = st.selectbox(
+            "Select entry to delete", list(options.keys()), key=f"{key_prefix}_delete_select"
+        )
+        row = options[choice]
+
+        if st.button("Delete this entry", key=f"{key_prefix}_delete_btn", use_container_width=True):
+            st.session_state["pending_delete"] = row["id"]
+            st.rerun()
+
+    if "pending_delete" in st.session_state:
+        confirm_delete_dialog()
+
+
+@st.dialog("Confirm Deletion")
+def confirm_delete_dialog():
+    st.write("Sure want to delete this data from both input and output table?")
+    col1, col2 = st.columns(2)
+    if col1.button("Yes, Delete", use_container_width=True):
+        delete_entry(st.session_state["pending_delete"])
+        st.session_state.pop("pending_delete", None)
+        st.success("Entry deleted from both tables.")
+        st.rerun()
+    if col2.button("Cancel", use_container_width=True):
+        st.session_state.pop("pending_delete", None)
+        st.rerun()
+
 # ---------------------------------------------------------------------------
 # BUSINESS USER VIEW
 # ---------------------------------------------------------------------------
@@ -340,6 +386,7 @@ def admin_view():
         if input_rows:
             st.dataframe(input_rows, use_container_width=True)
             render_edit_section(input_rows, key_prefix="admin")
+            render_delete_section(input_rows, key_prefix="admin")
         else:
             st.info("No input entries for this date.")
 
