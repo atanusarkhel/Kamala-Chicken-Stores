@@ -188,6 +188,7 @@ def business_view():
 
         if rows:
             st.dataframe(rows, use_container_width=True)
+            #disabling edit option for business users
             render_edit_section(rows, key_prefix="biz")
         else:
             st.info("No input data found for this date.")
