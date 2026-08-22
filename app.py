@@ -11,8 +11,8 @@ def show_banner():
     st.markdown(
         f"""
         <div style="
-            background-color:#79F6CE;
-            color:#084F38;
+            background-color:#8B0000;
+            color:white;
             padding:12px 0;
             text-align:center;
             font-size:24px;
@@ -142,14 +142,93 @@ def render_edit_section(rows: list, key_prefix: str):
             save = st.form_submit_button("Save changes", use_container_width=True)
 
         if save:
-            metrics = update_entry(row["id"], new_date, new_revenue, new_cost, new_units)
-            st.success("Entry updated.")
-            st.json(metrics)
+            # Stash the pending edit and show a confirmation popup instead
+            # of saving immediately.
+            st.session_state["pending_edit"] = {
+                "input_id": row["id"],
+                "new_date": new_date,
+                "revenue": new_revenue,
+                "cost": new_cost,
+                "units_sold": new_units,
+            }
             st.rerun()
+
+    if "pending_edit" in st.session_state:
+        confirm_edit_dialog()
+
+
+@st.dialog("Confirm Update")
+def confirm_edit_dialog():
+    data = st.session_state["pending_edit"]
+    st.write("Please confirm the updated values:")
+    st.write(f"**Date:** {data['new_date']}")
+    st.write(f"**Revenue:** {data['revenue']}")
+    st.write(f"**Cost:** {data['cost']}")
+    st.write(f"**Units Sold:** {data['units_sold']}")
+
+    col1, col2 = st.columns(2)
+    if col1.button("Confirm Update", use_container_width=True):
+        metrics = update_entry(
+            data["input_id"], data["new_date"], data["revenue"],
+            data["cost"], data["units_sold"],
+        )
+        st.session_state.pop("pending_edit", None)
+        st.success("Entry updated.")
+        st.rerun()
+    if col2.button("Cancel", use_container_width=True):
+        st.session_state.pop("pending_edit", None)
+        st.rerun()
 
 # ---------------------------------------------------------------------------
 # BUSINESS USER VIEW
 # ---------------------------------------------------------------------------
+@st.dialog("Confirm Submission")
+def confirm_submit_dialog():
+    data = st.session_state["pending_entry"]
+    st.write("Please confirm the entry before saving:")
+    st.write(f"**Date:** {data['entry_date']}")
+    st.write(f"**Revenue:** {data['revenue']}")
+    st.write(f"**Cost:** {data['cost']}")
+    st.write(f"**Units Sold:** {data['units_sold']}")
+
+    col1, col2 = st.columns(2)
+    if col1.button("Confirm & Submit", use_container_width=True):
+        entry_date = data["entry_date"]
+        revenue = data["revenue"]
+        cost = data["cost"]
+        units_sold = data["units_sold"]
+
+        # 1) Save the raw input
+        input_row = {
+            "entry_date": str(entry_date),
+            "submitted_by": st.session_state["username"],
+            "revenue": revenue,
+            "cost": cost,
+            "units_sold": units_sold,
+        }
+        input_result = supabase.table(INPUT_TABLE).insert(input_row).execute()
+        input_id = input_result.data[0]["id"]
+
+        # 2) Calculate metrics from that input
+        metrics = calculate_metrics(revenue, cost, units_sold)
+
+        # 3) Save the calculated output, linked back to the input row
+        output_row = {
+            "entry_date": str(entry_date),
+            "submitted_by": st.session_state["username"],
+            "input_id": input_id,
+            **metrics,
+        }
+        supabase.table(OUTPUT_TABLE).insert(output_row).execute()
+
+        st.session_state.pop("pending_entry", None)
+        st.success("Saved successfully.")
+        st.rerun()
+    if col2.button("Cancel", use_container_width=True):
+        st.session_state.pop("pending_entry", None)
+        st.rerun()
+
+
 def business_view():
     show_banner()
     st.title("📝 Business Data Entry")
@@ -182,31 +261,18 @@ def business_view():
                     "Please contact admin if this needs correction."
                 )
             else:
-                # 1) Save the raw input
-                input_row = {
-                    "entry_date": str(entry_date),
-                    "submitted_by": st.session_state["username"],
+                # Stash the pending entry and show a confirmation popup
+                # instead of saving immediately.
+                st.session_state["pending_entry"] = {
+                    "entry_date": entry_date,
                     "revenue": revenue,
                     "cost": cost,
                     "units_sold": units_sold,
                 }
-                input_result = supabase.table(INPUT_TABLE).insert(input_row).execute()
-                input_id = input_result.data[0]["id"]
+                st.rerun()
 
-                # 2) Calculate metrics from that input
-                metrics = calculate_metrics(revenue, cost, units_sold)
-
-                # 3) Save the calculated output, linked back to the input row
-                output_row = {
-                    "entry_date": str(entry_date),
-                    "submitted_by": st.session_state["username"],
-                    "input_id": input_id,
-                    **metrics,
-                }
-                supabase.table(OUTPUT_TABLE).insert(output_row).execute()
-
-                st.success("Saved successfully.")
-                st.json(metrics)
+    if "pending_entry" in st.session_state:
+        confirm_submit_dialog()
 
     # -----------------------------------------------------------------
     # TAB 2: Pick any date, view input data already submitted
@@ -220,7 +286,7 @@ def business_view():
             supabase.table(INPUT_TABLE)
             .select("*")
             .eq("entry_date", str(view_date))
-            .eq("submitted_by", st.session_state["username"])
+            .ilike("submitted_by", st.session_state["username"].strip())
             .execute()
         )
         rows = result.data
