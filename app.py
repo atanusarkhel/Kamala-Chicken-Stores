@@ -4,6 +4,29 @@ from supabase import create_client
 
 st.set_page_config(page_title="Business Metrics App", layout="centered")
 
+BUSINESS_NAME = "Kamala Chicken Stores"
+
+
+def show_banner():
+    st.markdown(
+        f"""
+        <div style="
+            background-color:#8B0000;
+            color:white;
+            padding:12px 0;
+            text-align:center;
+            font-size:24px;
+            font-weight:bold;
+            border-radius:6px;
+            margin-bottom:20px;
+        ">
+            {BUSINESS_NAME}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # CONNECT TO SUPABASE
 # ---------------------------------------------------------------------------
@@ -25,6 +48,7 @@ OUTPUT_TABLE = "business_metrics"
 # admin1 = { password = "xyz789", role = "admin" }
 # ---------------------------------------------------------------------------
 def login():
+    show_banner()
     st.title("🔐 Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
@@ -127,6 +151,7 @@ def render_edit_section(rows: list, key_prefix: str):
 # BUSINESS USER VIEW
 # ---------------------------------------------------------------------------
 def business_view():
+    show_banner()
     st.title("📝 Business Data Entry")
 
     tab1, tab2 = st.tabs(["Add Entry", "View My Input Data (Read-only)"])
@@ -231,6 +256,7 @@ def show_output_totals(rows: list):
 
 
 def admin_view():
+    show_banner()
     st.title("📊 Admin Dashboard")
 
     tab1, tab2 = st.tabs(["Single Date View", "Compare Two Dates"])
