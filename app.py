@@ -14,7 +14,8 @@ def get_supabase():
     return create_client(url, key)
 
 supabase = get_supabase()
-TABLE_NAME = "business_entries"
+INPUT_TABLE = "business_input"
+OUTPUT_TABLE = "business_metrics"
 
 # ---------------------------------------------------------------------------
 # LOGIN GATE (predefined username/password -> role)
@@ -62,64 +63,221 @@ def calculate_metrics(revenue: float, cost: float, units_sold: int) -> dict:
     }
 
 # ---------------------------------------------------------------------------
+# UPDATE LOGIC — edits an existing input row and recalculates its output row
+# ---------------------------------------------------------------------------
+def update_entry(input_id: int, new_date, revenue: float, cost: float, units_sold: int):
+    supabase.table(INPUT_TABLE).update({
+        "entry_date": str(new_date),
+        "revenue": revenue,
+        "cost": cost,
+        "units_sold": units_sold,
+    }).eq("id", input_id).execute()
+
+    metrics = calculate_metrics(revenue, cost, units_sold)
+    supabase.table(OUTPUT_TABLE).update({
+        "entry_date": str(new_date),
+        **metrics,
+    }).eq("input_id", input_id).execute()
+
+    return metrics
+
+
+def render_edit_section(rows: list, key_prefix: str):
+    """Shows a picker + edit form for a list of input rows. Reused by both
+    the business user and admin views."""
+    if not rows:
+        return
+
+    with st.expander("✏️ Edit an entry"):
+        options = {
+            f"ID {r['id']} — {r['entry_date']} — revenue {r['revenue']} "
+            f"(by {r['submitted_by']})": r
+            for r in rows
+        }
+        choice = st.selectbox(
+            "Select entry to edit", list(options.keys()), key=f"{key_prefix}_select"
+        )
+        row = options[choice]
+
+        with st.form(f"{key_prefix}_edit_form"):
+            new_date = st.date_input(
+                "Date", value=date.fromisoformat(row["entry_date"]), key=f"{key_prefix}_date"
+            )
+            new_revenue = st.number_input(
+                "Revenue", min_value=0.0, step=100.0, value=float(row["revenue"]),
+                key=f"{key_prefix}_revenue",
+            )
+            new_cost = st.number_input(
+                "Cost", min_value=0.0, step=100.0, value=float(row["cost"]),
+                key=f"{key_prefix}_cost",
+            )
+            new_units = st.number_input(
+                "Units Sold", min_value=0, step=1, value=int(row["units_sold"]),
+                key=f"{key_prefix}_units",
+            )
+            save = st.form_submit_button("Save changes", use_container_width=True)
+
+        if save:
+            metrics = update_entry(row["id"], new_date, new_revenue, new_cost, new_units)
+            st.success("Entry updated.")
+            st.json(metrics)
+            st.rerun()
+
+# ---------------------------------------------------------------------------
 # BUSINESS USER VIEW
 # ---------------------------------------------------------------------------
 def business_view():
     st.title("📝 Business Data Entry")
 
-    with st.form("entry_form", clear_on_submit=True):
-        entry_date = st.date_input("Date", value=date.today())
-        revenue = st.number_input("Revenue", min_value=0.0, step=100.0)
-        cost = st.number_input("Cost", min_value=0.0, step=100.0)
-        units_sold = st.number_input("Units Sold", min_value=0, step=1)
-        submitted = st.form_submit_button("Submit", use_container_width=True)
+    tab1, tab2 = st.tabs(["Add Entry", "View My Input Data"])
 
-    if submitted:
-        metrics = calculate_metrics(revenue, cost, units_sold)
-        row = {
-            "entry_date": str(entry_date),
-            "submitted_by": st.session_state["username"],
-            "revenue": revenue,
-            "cost": cost,
-            "units_sold": units_sold,
-            **metrics,
-        }
-        supabase.table(TABLE_NAME).insert(row).execute()
-        st.success("Saved successfully.")
-        st.json(metrics)
+    # -----------------------------------------------------------------
+    # TAB 1: Submit a new entry
+    # -----------------------------------------------------------------
+    with tab1:
+        with st.form("entry_form", clear_on_submit=True):
+            entry_date = st.date_input("Date", value=date.today())
+            revenue = st.number_input("Revenue", min_value=0.0, step=100.0)
+            cost = st.number_input("Cost", min_value=0.0, step=100.0)
+            units_sold = st.number_input("Units Sold", min_value=0, step=1)
+            submitted = st.form_submit_button("Submit", use_container_width=True)
+
+        if submitted:
+            # 1) Save the raw input
+            input_row = {
+                "entry_date": str(entry_date),
+                "submitted_by": st.session_state["username"],
+                "revenue": revenue,
+                "cost": cost,
+                "units_sold": units_sold,
+            }
+            input_result = supabase.table(INPUT_TABLE).insert(input_row).execute()
+            input_id = input_result.data[0]["id"]
+
+            # 2) Calculate metrics from that input
+            metrics = calculate_metrics(revenue, cost, units_sold)
+
+            # 3) Save the calculated output, linked back to the input row
+            output_row = {
+                "entry_date": str(entry_date),
+                "submitted_by": st.session_state["username"],
+                "input_id": input_id,
+                **metrics,
+            }
+            supabase.table(OUTPUT_TABLE).insert(output_row).execute()
+
+            st.success("Saved successfully.")
+            st.json(metrics)
+
+    # -----------------------------------------------------------------
+    # TAB 2: Pick any date, view (and edit) input data already submitted
+    # (scoped to this user's own submissions — remove the .eq() filter
+    # below if business users should see everyone's data)
+    # -----------------------------------------------------------------
+    with tab2:
+        view_date = st.date_input("Select date", value=date.today(), key="business_view_date")
+
+        result = (
+            supabase.table(INPUT_TABLE)
+            .select("*")
+            .eq("entry_date", str(view_date))
+            .eq("submitted_by", st.session_state["username"])
+            .execute()
+        )
+        rows = result.data
+
+        if rows:
+            st.dataframe(rows, use_container_width=True)
+            render_edit_section(rows, key_prefix="biz")
+        else:
+            st.info("No input data found for this date.")
 
 # ---------------------------------------------------------------------------
 # ADMIN VIEW
 # ---------------------------------------------------------------------------
+def fetch_rows(table_name: str, entry_date: date):
+    result = (
+        supabase.table(table_name)
+        .select("*")
+        .eq("entry_date", str(entry_date))
+        .execute()
+    )
+    return result.data
+
+
+def show_output_totals(rows: list):
+    if not rows:
+        return
+    total_profit = sum(r["profit"] for r in rows)
+    avg_margin = sum(r["margin_pct"] for r in rows) / len(rows)
+    avg_price = sum(r["avg_price_per_unit"] for r in rows) / len(rows)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Profit", f"{total_profit:,.2f}")
+    c2.metric("Avg Margin %", f"{avg_margin:,.2f}%")
+    c3.metric("Avg Price/Unit", f"{avg_price:,.2f}")
+
+
 def admin_view():
     st.title("📊 Admin Dashboard")
 
-    selected_date = st.date_input("Select date to view", value=date.today())
+    tab1, tab2 = st.tabs(["Single Date View", "Compare Two Dates"])
 
-    result = (
-        supabase.table(TABLE_NAME)
-        .select("*")
-        .eq("entry_date", str(selected_date))
-        .execute()
-    )
-    rows = result.data
+    # -----------------------------------------------------------------
+    # TAB 1: Single date — input and output shown together, editable
+    # -----------------------------------------------------------------
+    with tab1:
+        selected_date = st.date_input("Select date", value=date.today(), key="single_date")
 
-    if not rows:
-        st.info("No entries for this date.")
-        return
+        input_rows = fetch_rows(INPUT_TABLE, selected_date)
+        output_rows = fetch_rows(OUTPUT_TABLE, selected_date)
 
-    st.dataframe(rows, use_container_width=True)
+        st.subheader("Input data")
+        if input_rows:
+            st.dataframe(input_rows, use_container_width=True)
+            render_edit_section(input_rows, key_prefix="admin")
+        else:
+            st.info("No input entries for this date.")
 
-    total_revenue = sum(r["revenue"] for r in rows)
-    total_cost = sum(r["cost"] for r in rows)
-    total_profit = sum(r["profit"] for r in rows)
-    avg_margin = sum(r["margin_pct"] for r in rows) / len(rows)
+        st.subheader("Output (calculated metrics)")
+        if output_rows:
+            st.dataframe(output_rows, use_container_width=True)
+            show_output_totals(output_rows)
+        else:
+            st.info("No output entries for this date.")
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Revenue", f"{total_revenue:,.2f}")
-    c2.metric("Total Cost", f"{total_cost:,.2f}")
-    c3.metric("Total Profit", f"{total_profit:,.2f}")
-    c4.metric("Avg Margin %", f"{avg_margin:,.2f}%")
+    # -----------------------------------------------------------------
+    # TAB 2: Compare two dates, from either Input or Output table
+    # -----------------------------------------------------------------
+    with tab2:
+        source = st.radio("Data source to compare", ["Input", "Output"], horizontal=True)
+        table_name = INPUT_TABLE if source == "Input" else OUTPUT_TABLE
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            date_a = st.date_input("Date A", value=date.today(), key="date_a")
+        with col_b:
+            date_b = st.date_input("Date B", value=date.today(), key="date_b")
+
+        rows_a = fetch_rows(table_name, date_a)
+        rows_b = fetch_rows(table_name, date_b)
+
+        result_col_a, result_col_b = st.columns(2)
+        with result_col_a:
+            st.subheader(f"{source} — {date_a}")
+            if rows_a:
+                st.dataframe(rows_a, use_container_width=True)
+                if source == "Output":
+                    show_output_totals(rows_a)
+            else:
+                st.info("No entries for this date.")
+        with result_col_b:
+            st.subheader(f"{source} — {date_b}")
+            if rows_b:
+                st.dataframe(rows_b, use_container_width=True)
+                if source == "Output":
+                    show_output_totals(rows_b)
+            else:
+                st.info("No entries for this date.")
 
 # ---------------------------------------------------------------------------
 # MAIN ROUTING
