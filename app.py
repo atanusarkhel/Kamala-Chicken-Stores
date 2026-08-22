@@ -11,8 +11,8 @@ def show_banner():
     st.markdown(
         f"""
         <div style="
-            background-color:#8B0000;
-            color:white;
+            background-color:#79F6CE;
+            color:#084F38;
             padding:12px 0;
             text-align:center;
             font-size:24px;
