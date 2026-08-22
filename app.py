@@ -129,10 +129,10 @@ def render_edit_section(rows: list, key_prefix: str):
 def business_view():
     st.title("📝 Business Data Entry")
 
-    tab1, tab2 = st.tabs(["Add Entry", "View My Input Data"])
+    tab1, tab2 = st.tabs(["Add Entry", "View My Input Data (Read-only)"])
 
     # -----------------------------------------------------------------
-    # TAB 1: Submit a new entry
+    # TAB 1: Submit a new entry (existing behavior)
     # -----------------------------------------------------------------
     with tab1:
         with st.form("entry_form", clear_on_submit=True):
@@ -143,36 +143,50 @@ def business_view():
             submitted = st.form_submit_button("Submit", use_container_width=True)
 
         if submitted:
-            # 1) Save the raw input
-            input_row = {
-                "entry_date": str(entry_date),
-                "submitted_by": st.session_state["username"],
-                "revenue": revenue,
-                "cost": cost,
-                "units_sold": units_sold,
-            }
-            input_result = supabase.table(INPUT_TABLE).insert(input_row).execute()
-            input_id = input_result.data[0]["id"]
+            # Enforce one input entry per date (across all users)
+            existing = (
+                supabase.table(INPUT_TABLE)
+                .select("id")
+                .eq("entry_date", str(entry_date))
+                .execute()
+            )
+            if existing.data:
+                st.error(
+                    f"An entry already exists for {entry_date}. "
+                    "Only one input entry is allowed per date. "
+                    "Please contact admin if this needs correction."
+                )
+            else:
+                # 1) Save the raw input
+                input_row = {
+                    "entry_date": str(entry_date),
+                    "submitted_by": st.session_state["username"],
+                    "revenue": revenue,
+                    "cost": cost,
+                    "units_sold": units_sold,
+                }
+                input_result = supabase.table(INPUT_TABLE).insert(input_row).execute()
+                input_id = input_result.data[0]["id"]
 
-            # 2) Calculate metrics from that input
-            metrics = calculate_metrics(revenue, cost, units_sold)
+                # 2) Calculate metrics from that input
+                metrics = calculate_metrics(revenue, cost, units_sold)
 
-            # 3) Save the calculated output, linked back to the input row
-            output_row = {
-                "entry_date": str(entry_date),
-                "submitted_by": st.session_state["username"],
-                "input_id": input_id,
-                **metrics,
-            }
-            supabase.table(OUTPUT_TABLE).insert(output_row).execute()
+                # 3) Save the calculated output, linked back to the input row
+                output_row = {
+                    "entry_date": str(entry_date),
+                    "submitted_by": st.session_state["username"],
+                    "input_id": input_id,
+                    **metrics,
+                }
+                supabase.table(OUTPUT_TABLE).insert(output_row).execute()
 
-            st.success("Saved successfully.")
-            st.json(metrics)
+                st.success("Saved successfully.")
+                st.json(metrics)
 
     # -----------------------------------------------------------------
-    # TAB 2: Pick any date, view (and edit) input data already submitted
-    # (scoped to this user's own submissions — remove the .eq() filter
-    # below if business users should see everyone's data)
+    # TAB 2: Pick any date, view input data already submitted
+    # (scoped to this user's own submissions — change the .eq() below
+    # to remove that filter if business users should see everyone's data)
     # -----------------------------------------------------------------
     with tab2:
         view_date = st.date_input("Select date", value=date.today(), key="business_view_date")
@@ -188,8 +202,6 @@ def business_view():
 
         if rows:
             st.dataframe(rows, use_container_width=True)
-            #disabling edit option for business users
-            render_edit_section(rows, key_prefix="biz")
         else:
             st.info("No input data found for this date.")
 
@@ -224,7 +236,7 @@ def admin_view():
     tab1, tab2 = st.tabs(["Single Date View", "Compare Two Dates"])
 
     # -----------------------------------------------------------------
-    # TAB 1: Single date — input and output shown together, editable
+    # TAB 1: Single date — input and output shown together
     # -----------------------------------------------------------------
     with tab1:
         selected_date = st.date_input("Select date", value=date.today(), key="single_date")
