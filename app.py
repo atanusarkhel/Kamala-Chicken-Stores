@@ -612,18 +612,39 @@ def confirm_admin_save_dialog():
 @st.dialog("Confirm Deletion")
 def confirm_admin_delete_dialog():
     pending = st.session_state["pending_admin_delete"]
-    cat = CATEGORIES[pending["cat_key"]]
-    st.write(
-        f"Sure want to delete the **{cat['label']}** data for "
-        f"**{pending['entry_date']}**? The combined output metrics for "
-        f"this date will also be recalculated."
-    )
+    cat_key = pending["cat_key"]
+    cat = CATEGORIES[cat_key]
+    is_mandatory = cat_key in MANDATORY_CATEGORIES
+
+    if is_mandatory:
+        st.write(
+            f"Sure want to delete the **{cat['label']}** data for "
+            f"**{pending['entry_date']}**? Since this is a mandatory category, "
+            f"the aggregated output metrics for this date will also be "
+            f"**removed** — the business user will need to resubmit "
+            f"{cat['label']} and press Calculate again to regenerate it."
+        )
+    else:
+        st.write(
+            f"Sure want to delete the **{cat['label']}** data for "
+            f"**{pending['entry_date']}**? The combined output metrics for "
+            f"this date will also be recalculated."
+        )
+
     col1, col2 = st.columns(2)
     if col1.button("Yes, Delete", use_container_width=True):
         try:
             supabase.table(cat["table"]).delete().eq("entry_date", str(pending["entry_date"])).execute()
-            recompute_metrics(pending["entry_date"], st.session_state["username"])
-            set_flash("success", f"{cat['label']} data deleted.")
+            if is_mandatory:
+                supabase.table(OUTPUT_TABLE).delete().eq("entry_date", str(pending["entry_date"])).execute()
+                set_flash(
+                    "success",
+                    f"{cat['label']} data deleted. Aggregated output metrics for "
+                    f"this date were removed and will need to be recalculated.",
+                )
+            else:
+                recompute_metrics(pending["entry_date"], st.session_state["username"])
+                set_flash("success", f"{cat['label']} data deleted.")
         except Exception as e:
             set_flash("error", f"Failed to delete {cat['label']} data: {e}")
         st.session_state.pop("pending_admin_delete", None)
