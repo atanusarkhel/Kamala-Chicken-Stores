@@ -398,7 +398,28 @@ def render_category_submit_section(cat_key: str, entry_date: date):
     existing = fetch_category_row(cat["table"], entry_date)
     locked = existing is not None
 
-    with st.expander(f"📁 {cat['label']}", expanded=not locked):
+    label_prefix = "✅" if locked else "📁"
+
+    if not locked:
+        st.markdown(
+            f"""
+            <div style="
+                display:inline-block;
+                background-color:#FF4B4B;
+                color:white;
+                padding:5px 12px;
+                border-radius:6px;
+                font-size:13px;
+                font-weight:700;
+                margin-bottom:4px;
+            ">
+                ⚠️ {cat['label']} — data not yet submitted
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with st.expander(f"{label_prefix} {cat['label']}", expanded=False):
         if locked:
             st.info(f"Data for {entry_date} is already submitted and locked.")
         for subcat, fields in cat["subcats"].items():
