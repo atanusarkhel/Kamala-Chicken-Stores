@@ -1,6 +1,18 @@
 import streamlit as st
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from supabase import create_client
+
+IST = ZoneInfo("Asia/Kolkata")
+
+
+def now_ist() -> datetime:
+    return datetime.now(IST)
+
+
+def today_ist() -> date:
+    return now_ist().date()
+
 
 st.set_page_config(page_title="Business Metrics App", layout="centered")
 
@@ -26,7 +38,6 @@ def show_banner():
         unsafe_allow_html=True,
     )
 
-
 # ---------------------------------------------------------------------------
 # CONNECT TO SUPABASE
 # ---------------------------------------------------------------------------
@@ -42,10 +53,6 @@ OUTPUT_TABLE = "business_metrics"
 
 # ---------------------------------------------------------------------------
 # LOGIN GATE (predefined username/password -> role)
-# secrets.toml holds a dict like:
-# [users]
-# alice = { password = "abc123", role = "business" }
-# admin1 = { password = "xyz789", role = "admin" }
 # ---------------------------------------------------------------------------
 def login():
     show_banner()
@@ -74,32 +81,223 @@ def logout_button():
             st.rerun()
 
 # ---------------------------------------------------------------------------
-# CALCULATION LOGIC — customize this function for your real business metrics
+# FORM STRUCTURE — category -> subcategory -> list of (field, label, type)
+# type is "number", "kg", "select:Opt1,Opt2,...", or "chicken_size"
 # ---------------------------------------------------------------------------
-def calculate_metrics(revenue: float, cost: float, units_sold: int) -> dict:
-    profit = revenue - cost
-    margin_pct = (profit / revenue * 100) if revenue else 0
-    avg_price_per_unit = (revenue / units_sold) if units_sold else 0
+CHICKEN_SIZE_OPTIONS = ["Small", "Medium", "Big"]
+CHICKEN_SIZE_TO_NUM = {"Small": 1, "Medium": 2, "Big": 3}
+CHICKEN_SIZE_FROM_NUM = {1: "Small", 2: "Medium", 3: "Big"}
+
+FORM_STRUCTURE = {
+    "Stock": {
+        "Ajker Kena": [
+            ("chandan_quantity_kg", "Chandan Quantity (KG)", "kg"),
+            ("chandan_price_per_kg", "Chandan Price per KG", "number"),
+            ("chandan_payment", "Chandan Payment", "number"),
+            ("sabir_quantity_kg", "Sabir Quantity (KG)", "kg"),
+            ("sabir_price_per_kg", "Sabir Price per KG", "number"),
+            ("sabir_payment", "Sabir Payment", "number"),
+            ("snandi_quantity_kg", "SNandi Quantity (KG)", "kg"),
+            ("snandi_price_per_kg", "SNandi Price per KG", "number"),
+            ("snandi_payment", "SNandi Payment", "number"),
+            ("stock_other1_quantity_kg", "Other1 Quantity (KG)", "kg"),
+            ("stock_other1_price_per_kg", "Other1 Price per KG", "number"),
+            ("stock_other1_payment", "Other1 Payment", "number"),
+            ("stock_other2_quantity_kg", "Other2 Quantity (KG)", "kg"),
+            ("stock_other2_price_per_kg", "Other2 Price per KG", "number"),
+            ("stock_other2_payment", "Other2 Payment", "number"),
+            ("ajke_mal_pore_ache_kg", "Ajke Mal Pore Ache (KG)", "kg"),
+        ],
+    },
+    "Sales": {
+        "Hindusthan": [
+            ("hotel1_sales_kg", "Hotel1 Sales (KG)", "kg"),
+            ("hotel1_price_per_kg", "Hotel1 Price per KG", "number"),
+            ("hotel1_payment", "Hotel1 Payment", "number"),
+        ],
+        "Other1": [
+            ("hotel2_sales_kg", "Hotel2 Sales (KG)", "kg"),
+            ("hotel2_price_per_kg", "Hotel2 Price per KG", "number"),
+            ("hotel2_payment", "Hotel2 Payment", "number"),
+        ],
+        "Other2": [
+            ("hotel3_sales_kg", "Hotel3 Sales (KG)", "kg"),
+            ("hotel3_price_per_kg", "Hotel3 Price per KG", "number"),
+            ("hotel3_payment", "Hotel3 Payment", "number"),
+        ],
+        "Dokan": [
+            ("chicken_size", "Chicken Size", "chicken_size"),
+            ("mangso_price_per_kg", "Mangso Price per KG", "number"),
+            ("gota_customer_sales_kg", "Gota Customer Sales (KG)", "kg"),
+            ("gota_customer_price_per_kg", "Gota Customer Price per KG", "number"),
+            ("gota_dokandar_sales_kg", "Gota Dokandar Sales (KG)", "kg"),
+            ("gota_dokandar_price_per_kg", "Gota Dokandar Price per KG", "number"),
+            ("chhat_sales_kg", "Chhat Sales (KG)", "kg"),
+            ("chhat_price_per_kg", "Chhat Price per KG", "number"),
+        ],
+    },
+    "Cashflow": {
+        "": [
+            ("total_cash_ache", "Total Cash Ache", "number"),
+            ("phonepe_balance", "PhonePe Balance", "number"),
+            ("phonepe_aseche", "PhonePe Aseche", "number"),
+            ("phonepe_payment_hoyeche", "PhonePe Payment Hoyeche", "number"),
+            ("ajker_dokane_dhar_diyeche", "Ajker Dokane Dhar Diyeche", "number"),
+            ("ajke_dhar_aday_hoyeche", "Ajke Dhar Aday Hoyeche", "number"),
+            ("ajker_advance_payment_aseche", "Ajker Advance Payment Aseche", "number"),
+            ("ajke_mangso_pore_ache", "Ajke Mangso Pore Ache", "number"),
+            ("murgi_mangso_loss", "Murgi Mangso Loss", "number"),
+        ],
+    },
+    "Expense": {
+        "": [
+            ("emi_box", "EMI Box", "number"),
+            ("labour", "Labour", "number"),
+            ("desi_murgi", "Desi Murgi", "number"),
+            ("murgi_mash", "Murgi Mash", "number"),
+            ("susan_labour", "Susan Labour", "number"),
+            ("paper", "Paper", "number"),
+            ("bazar", "Bazar", "number"),
+            ("gari_vara", "Gari Vara", "number"),
+            ("gas", "Gas", "number"),
+            ("expense_other1", "Other1", "number"),
+            ("expense_other2", "Other2", "number"),
+            ("expense_other3", "Other3", "number"),
+            ("expense_other4", "Other4", "number"),
+            ("expense_other5", "Other5", "number"),
+        ],
+    },
+    "Personal Dhar": {
+        "": [
+            ("vodu", "Vodu", "number"),
+            ("atanu", "Atanu", "number"),
+            ("personal_other1", "Other1", "number"),
+            ("personal_other2", "Other2", "number"),
+            ("personal_other3", "Other3", "number"),
+            ("personal_other4", "Other4", "number"),
+            ("personal_other5", "Other5", "number"),
+        ],
+    },
+}
+
+ALL_FIELD_NAMES = [
+    field for cats in FORM_STRUCTURE.values() for fields in cats.values() for field, _, _ in fields
+]
+
+
+def render_category_fields(prefix: str, defaults: dict = None):
+    """Renders every category/subcategory field. Must be called inside an
+    active st.form(). Returns nothing — read values back via st.session_state
+    using the same keys ({prefix}_{field_name}) after the form submits."""
+    defaults = defaults or {}
+    for category, subcats in FORM_STRUCTURE.items():
+        with st.expander(f"📁 {category}", expanded=False):
+            for subcat, fields in subcats.items():
+                if subcat:
+                    st.markdown(f"**{subcat}**")
+                for field_name, label, ftype in fields:
+                    key = f"{prefix}_{field_name}"
+                    if ftype == "kg":
+                        default_val = float(defaults.get(field_name, 0) or 0)
+                        st.number_input(
+                            label, value=default_val, step=0.1, format="%.2f", key=key
+                        )
+                    elif ftype == "number":
+                        default_val = float(defaults.get(field_name, 0) or 0)
+                        st.number_input(label, value=default_val, step=1.0, key=key)
+                    elif ftype.startswith("select:"):
+                        options = ftype.split(":", 1)[1].split(",")
+                        default_val = defaults.get(field_name) or options[0]
+                        idx = options.index(default_val) if default_val in options else 0
+                        st.selectbox(label, options, index=idx, key=key)
+                    elif ftype == "chicken_size":
+                        # Stored in the DB as numeric (1/2/3); shown in the
+                        # UI as a dropdown with the text labels.
+                        # Defaults to "Medium" when no prior value exists.
+                        default_num = defaults.get(field_name, 2)
+                        default_label = CHICKEN_SIZE_FROM_NUM.get(
+                            default_num, "Medium"
+                        )
+                        idx = CHICKEN_SIZE_OPTIONS.index(default_label)
+                        st.selectbox(label, CHICKEN_SIZE_OPTIONS, index=idx, key=key)
+
+
+def collect_field_values(prefix: str) -> dict:
+    """Reads back the values of every field for a given prefix from
+    session_state after a form submit."""
+    values = {}
+    for field_name in ALL_FIELD_NAMES:
+        raw = st.session_state[f"{prefix}_{field_name}"]
+        if field_name == "chicken_size":
+            values[field_name] = CHICKEN_SIZE_TO_NUM.get(raw)
+        else:
+            values[field_name] = raw
+    return values
+
+# ---------------------------------------------------------------------------
+# CALCULATION LOGIC
+# NOTE: these are starting-point aggregates only — confirm the real profit /
+# reconciliation formula with the business owner and adjust as needed.
+# ---------------------------------------------------------------------------
+def calculate_metrics(row: dict) -> dict:
+    total_stock_quantity_kg = (
+        row["chandan_quantity_kg"] + row["sabir_quantity_kg"] + row["snandi_quantity_kg"]
+        + row["stock_other1_quantity_kg"] + row["stock_other2_quantity_kg"]
+    )
+    total_stock_cost = (
+        row["chandan_payment"] + row["sabir_payment"] + row["snandi_payment"]
+        + row["stock_other1_payment"] + row["stock_other2_payment"]
+    )
+    total_sales_quantity_kg = (
+        row["hotel1_sales_kg"] + row["hotel2_sales_kg"] + row["hotel3_sales_kg"]
+        + row["gota_customer_sales_kg"] + row["gota_dokandar_sales_kg"] + row["chhat_sales_kg"]
+    )
+    total_sales_revenue = (
+        row["hotel1_payment"] + row["hotel2_payment"] + row["hotel3_payment"]
+        + row["gota_customer_sales_kg"] * row["gota_customer_price_per_kg"]
+        + row["gota_dokandar_sales_kg"] * row["gota_dokandar_price_per_kg"]
+        + row["chhat_sales_kg"] * row["chhat_price_per_kg"]
+    )
+    expense_fields = [
+        "emi_box", "labour", "desi_murgi", "murgi_mash", "susan_labour", "paper",
+        "bazar", "gari_vara", "gas", "expense_other1", "expense_other2",
+        "expense_other3", "expense_other4", "expense_other5",
+    ]
+    total_expense = sum(row[f] for f in expense_fields)
+
+    personal_fields = [
+        "vodu", "atanu", "personal_other1", "personal_other2",
+        "personal_other3", "personal_other4", "personal_other5",
+    ]
+    total_personal_dhar = sum(row[f] for f in personal_fields)
+
+    estimated_profit = total_sales_revenue - total_stock_cost - total_expense
+
     return {
-        "profit": round(profit, 2),
-        "margin_pct": round(margin_pct, 2),
-        "avg_price_per_unit": round(avg_price_per_unit, 2),
+        "total_stock_quantity_kg": round(total_stock_quantity_kg, 2),
+        "total_stock_cost": round(total_stock_cost, 2),
+        "total_sales_quantity_kg": round(total_sales_quantity_kg, 2),
+        "total_sales_revenue": round(total_sales_revenue, 2),
+        "total_expense": round(total_expense, 2),
+        "total_personal_dhar": round(total_personal_dhar, 2),
+        "estimated_profit": round(estimated_profit, 2),
     }
 
 # ---------------------------------------------------------------------------
-# UPDATE LOGIC — edits an existing input row and recalculates its output row
+# UPDATE LOGIC
 # ---------------------------------------------------------------------------
-def update_entry(input_id: int, new_date, revenue: float, cost: float, units_sold: int):
-    supabase.table(INPUT_TABLE).update({
+def update_entry(input_id: int, new_date, field_values: dict):
+    update_payload = {
         "entry_date": str(new_date),
-        "revenue": revenue,
-        "cost": cost,
-        "units_sold": units_sold,
-    }).eq("id", input_id).execute()
+        "updated_at": now_ist().isoformat(),
+        **field_values,
+    }
+    supabase.table(INPUT_TABLE).update(update_payload).eq("id", input_id).execute()
 
-    metrics = calculate_metrics(revenue, cost, units_sold)
+    metrics = calculate_metrics(field_values)
     supabase.table(OUTPUT_TABLE).update({
         "entry_date": str(new_date),
+        "updated_at": now_ist().isoformat(),
         **metrics,
     }).eq("input_id", input_id).execute()
 
@@ -107,49 +305,32 @@ def update_entry(input_id: int, new_date, revenue: float, cost: float, units_sol
 
 
 def render_edit_section(rows: list, key_prefix: str):
-    """Shows a picker + edit form for a list of input rows. Reused by both
-    the business user and admin views."""
     if not rows:
         return
 
     with st.expander("✏️ Edit an entry"):
         options = {
-            f"ID {r['id']} — {r['entry_date']} — revenue {r['revenue']} "
-            f"(by {r['submitted_by']})": r
+            f"ID {r['id']} — {r['entry_date']} (by {r['submitted_by']})": r
             for r in rows
         }
         choice = st.selectbox(
-            "Select entry to edit", list(options.keys()), key=f"{key_prefix}_select"
+            "Select entry to edit", list(options.keys()), key=f"{key_prefix}_edit_select"
         )
         row = options[choice]
 
         with st.form(f"{key_prefix}_edit_form"):
             new_date = st.date_input(
-                "Date", value=date.fromisoformat(row["entry_date"]), key=f"{key_prefix}_date"
+                "Date", value=date.fromisoformat(row["entry_date"]), key=f"{key_prefix}_edit_date"
             )
-            new_revenue = st.number_input(
-                "Revenue", min_value=0.0, step=100.0, value=float(row["revenue"]),
-                key=f"{key_prefix}_revenue",
-            )
-            new_cost = st.number_input(
-                "Cost", min_value=0.0, step=100.0, value=float(row["cost"]),
-                key=f"{key_prefix}_cost",
-            )
-            new_units = st.number_input(
-                "Units Sold", min_value=0, step=1, value=int(row["units_sold"]),
-                key=f"{key_prefix}_units",
-            )
+            render_category_fields(f"{key_prefix}_edit", defaults=row)
             save = st.form_submit_button("Save changes", use_container_width=True)
 
         if save:
-            # Stash the pending edit and show a confirmation popup instead
-            # of saving immediately.
+            field_values = collect_field_values(f"{key_prefix}_edit")
             st.session_state["pending_edit"] = {
                 "input_id": row["id"],
                 "new_date": new_date,
-                "revenue": new_revenue,
-                "cost": new_cost,
-                "units_sold": new_units,
+                "field_values": field_values,
             }
             st.rerun()
 
@@ -160,18 +341,12 @@ def render_edit_section(rows: list, key_prefix: str):
 @st.dialog("Confirm Update")
 def confirm_edit_dialog():
     data = st.session_state["pending_edit"]
-    st.write("Please confirm the updated values:")
-    st.write(f"**Date:** {data['new_date']}")
-    st.write(f"**Revenue:** {data['revenue']}")
-    st.write(f"**Cost:** {data['cost']}")
-    st.write(f"**Units Sold:** {data['units_sold']}")
+    st.write(f"Update entry for **{data['new_date']}**?")
+    st.caption("This will recalculate and update the linked output metrics too.")
 
     col1, col2 = st.columns(2)
     if col1.button("Confirm Update", use_container_width=True):
-        metrics = update_entry(
-            data["input_id"], data["new_date"], data["revenue"],
-            data["cost"], data["units_sold"],
-        )
+        update_entry(data["input_id"], data["new_date"], data["field_values"])
         st.session_state.pop("pending_edit", None)
         st.success("Entry updated.")
         st.rerun()
@@ -179,9 +354,8 @@ def confirm_edit_dialog():
         st.session_state.pop("pending_edit", None)
         st.rerun()
 
-
 # ---------------------------------------------------------------------------
-# DELETE LOGIC — removes an entry from both input and output tables
+# DELETE LOGIC
 # ---------------------------------------------------------------------------
 def delete_entry(input_id: int):
     supabase.table(OUTPUT_TABLE).delete().eq("input_id", input_id).execute()
@@ -189,14 +363,12 @@ def delete_entry(input_id: int):
 
 
 def render_delete_section(rows: list, key_prefix: str):
-    """Admin-only: pick an entry and delete it from both tables."""
     if not rows:
         return
 
     with st.expander("🗑️ Delete an entry"):
         options = {
-            f"ID {r['id']} — {r['entry_date']} — revenue {r['revenue']} "
-            f"(by {r['submitted_by']})": r
+            f"ID {r['id']} — {r['entry_date']} (by {r['submitted_by']})": r
             for r in rows
         }
         choice = st.selectbox(
@@ -231,38 +403,29 @@ def confirm_delete_dialog():
 @st.dialog("Confirm Submission")
 def confirm_submit_dialog():
     data = st.session_state["pending_entry"]
-    st.write("Please confirm the entry before saving:")
-    st.write(f"**Date:** {data['entry_date']}")
-    st.write(f"**Revenue:** {data['revenue']}")
-    st.write(f"**Cost:** {data['cost']}")
-    st.write(f"**Units Sold:** {data['units_sold']}")
+    st.write(f"Save entry for **{data['entry_date']}**?")
+    st.caption("This will be stored in the Input table and metrics calculated into the Output table.")
 
     col1, col2 = st.columns(2)
     if col1.button("Confirm & Submit", use_container_width=True):
         entry_date = data["entry_date"]
-        revenue = data["revenue"]
-        cost = data["cost"]
-        units_sold = data["units_sold"]
+        field_values = data["field_values"]
 
-        # 1) Save the raw input
         input_row = {
             "entry_date": str(entry_date),
             "submitted_by": st.session_state["username"],
-            "revenue": revenue,
-            "cost": cost,
-            "units_sold": units_sold,
+            "created_at": now_ist().isoformat(),
+            **field_values,
         }
         input_result = supabase.table(INPUT_TABLE).insert(input_row).execute()
         input_id = input_result.data[0]["id"]
 
-        # 2) Calculate metrics from that input
-        metrics = calculate_metrics(revenue, cost, units_sold)
-
-        # 3) Save the calculated output, linked back to the input row
+        metrics = calculate_metrics(field_values)
         output_row = {
             "entry_date": str(entry_date),
             "submitted_by": st.session_state["username"],
             "input_id": input_id,
+            "created_at": now_ist().isoformat(),
             **metrics,
         }
         supabase.table(OUTPUT_TABLE).insert(output_row).execute()
@@ -281,19 +444,13 @@ def business_view():
 
     tab1, tab2 = st.tabs(["Add Entry", "View My Input Data (Read-only)"])
 
-    # -----------------------------------------------------------------
-    # TAB 1: Submit a new entry (existing behavior)
-    # -----------------------------------------------------------------
     with tab1:
-        with st.form("entry_form", clear_on_submit=True):
-            entry_date = st.date_input("Date", value=date.today())
-            revenue = st.number_input("Revenue", min_value=0.0, step=100.0)
-            cost = st.number_input("Cost", min_value=0.0, step=100.0)
-            units_sold = st.number_input("Units Sold", min_value=0, step=1)
+        with st.form("add_entry_form"):
+            entry_date = st.date_input("Date", value=today_ist(), key="add_entry_date")
+            render_category_fields("add")
             submitted = st.form_submit_button("Submit", use_container_width=True)
 
         if submitted:
-            # Enforce one input entry per date (across all users)
             existing = (
                 supabase.table(INPUT_TABLE)
                 .select("id")
@@ -307,26 +464,18 @@ def business_view():
                     "Please contact admin if this needs correction."
                 )
             else:
-                # Stash the pending entry and show a confirmation popup
-                # instead of saving immediately.
+                field_values = collect_field_values("add")
                 st.session_state["pending_entry"] = {
                     "entry_date": entry_date,
-                    "revenue": revenue,
-                    "cost": cost,
-                    "units_sold": units_sold,
+                    "field_values": field_values,
                 }
                 st.rerun()
 
     if "pending_entry" in st.session_state:
         confirm_submit_dialog()
 
-    # -----------------------------------------------------------------
-    # TAB 2: Pick any date, view input data already submitted
-    # (scoped to this user's own submissions — change the .eq() below
-    # to remove that filter if business users should see everyone's data)
-    # -----------------------------------------------------------------
     with tab2:
-        view_date = st.date_input("Select date", value=date.today(), key="business_view_date")
+        view_date = st.date_input("Select date", value=today_ist(), key="business_view_date")
 
         result = (
             supabase.table(INPUT_TABLE)
@@ -358,13 +507,16 @@ def fetch_rows(table_name: str, entry_date: date):
 def show_output_totals(rows: list):
     if not rows:
         return
-    total_profit = sum(r["profit"] for r in rows)
-    avg_margin = sum(r["margin_pct"] for r in rows) / len(rows)
-    avg_price = sum(r["avg_price_per_unit"] for r in rows) / len(rows)
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Profit", f"{total_profit:,.2f}")
-    c2.metric("Avg Margin %", f"{avg_margin:,.2f}%")
-    c3.metric("Avg Price/Unit", f"{avg_price:,.2f}")
+    total_stock_cost = sum(r["total_stock_cost"] for r in rows)
+    total_sales_revenue = sum(r["total_sales_revenue"] for r in rows)
+    total_expense = sum(r["total_expense"] for r in rows)
+    total_profit = sum(r["estimated_profit"] for r in rows)
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Stock Cost", f"{total_stock_cost:,.2f}")
+    c2.metric("Total Sales Revenue", f"{total_sales_revenue:,.2f}")
+    c3.metric("Total Expense", f"{total_expense:,.2f}")
+    c4.metric("Estimated Profit", f"{total_profit:,.2f}")
 
 
 def admin_view():
@@ -373,11 +525,8 @@ def admin_view():
 
     tab1, tab2 = st.tabs(["Single Date View", "Compare Two Dates"])
 
-    # -----------------------------------------------------------------
-    # TAB 1: Single date — input and output shown together
-    # -----------------------------------------------------------------
     with tab1:
-        selected_date = st.date_input("Select date", value=date.today(), key="single_date")
+        selected_date = st.date_input("Select date", value=today_ist(), key="single_date")
 
         input_rows = fetch_rows(INPUT_TABLE, selected_date)
         output_rows = fetch_rows(OUTPUT_TABLE, selected_date)
@@ -397,18 +546,15 @@ def admin_view():
         else:
             st.info("No output entries for this date.")
 
-    # -----------------------------------------------------------------
-    # TAB 2: Compare two dates, from either Input or Output table
-    # -----------------------------------------------------------------
     with tab2:
         source = st.radio("Data source to compare", ["Input", "Output"], horizontal=True)
         table_name = INPUT_TABLE if source == "Input" else OUTPUT_TABLE
 
         col_a, col_b = st.columns(2)
         with col_a:
-            date_a = st.date_input("Date A", value=date.today(), key="date_a")
+            date_a = st.date_input("Date A", value=today_ist(), key="date_a")
         with col_b:
-            date_b = st.date_input("Date B", value=date.today(), key="date_b")
+            date_b = st.date_input("Date B", value=today_ist(), key="date_b")
 
         rows_a = fetch_rows(table_name, date_a)
         rows_b = fetch_rows(table_name, date_b)
