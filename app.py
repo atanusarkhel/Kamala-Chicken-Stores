@@ -3,6 +3,9 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 from supabase import create_client
 
+st.set_page_config(page_title="Business Metrics App", layout="centered")
+
+BUSINESS_NAME = "Kamala Chicken Stores"
 IST = ZoneInfo("Asia/Kolkata")
 
 
@@ -12,11 +15,6 @@ def now_ist() -> datetime:
 
 def today_ist() -> date:
     return now_ist().date()
-
-
-st.set_page_config(page_title="Business Metrics App", layout="centered")
-
-BUSINESS_NAME = "Kamala Chicken Stores"
 
 
 def show_banner():
@@ -38,6 +36,47 @@ def show_banner():
         unsafe_allow_html=True,
     )
 
+
+# ---------------------------------------------------------------------------
+# FLASH MESSAGES — persist a success/error message across a st.rerun() so
+# it actually shows up to the user (a message set right before rerun()
+# would otherwise be wiped before it's ever displayed).
+# ---------------------------------------------------------------------------
+def set_flash(kind: str, message: str):
+    st.session_state["flash"] = {"kind": kind, "message": message}
+
+
+def show_flash():
+    flash = st.session_state.pop("flash", None)
+    if flash:
+        if flash["kind"] == "success":
+            st.success(f"✅ {flash['message']}")
+        else:
+            st.error(f"❌ {flash['message']}")
+
+
+def inject_calculate_button_style():
+    st.markdown(
+        """
+        <style>
+        button[kind="primary"] {
+            font-size: 22px !important;
+            font-weight: 800 !important;
+            padding: 16px 0 !important;
+            background-color: #FFC107 !important;
+            color: #000000 !important;
+            border: 2px solid #FF8F00 !important;
+            border-radius: 10px !important;
+        }
+        button[kind="primary"]:hover {
+            background-color: #FFB300 !important;
+            border-color: #E65100 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 # ---------------------------------------------------------------------------
 # CONNECT TO SUPABASE
 # ---------------------------------------------------------------------------
@@ -48,11 +87,10 @@ def get_supabase():
     return create_client(url, key)
 
 supabase = get_supabase()
-INPUT_TABLE = "business_input"
 OUTPUT_TABLE = "business_metrics"
 
 # ---------------------------------------------------------------------------
-# LOGIN GATE (predefined username/password -> role)
+# LOGIN GATE
 # ---------------------------------------------------------------------------
 def login():
     show_banner()
@@ -81,195 +119,213 @@ def logout_button():
             st.rerun()
 
 # ---------------------------------------------------------------------------
-# FORM STRUCTURE — category -> subcategory -> list of (field, label, type)
+# CATEGORY DEFINITIONS — one table per category
 # type is "number", "kg", "select:Opt1,Opt2,...", or "chicken_size"
 # ---------------------------------------------------------------------------
 CHICKEN_SIZE_OPTIONS = ["Small", "Medium", "Big"]
 CHICKEN_SIZE_TO_NUM = {"Small": 1, "Medium": 2, "Big": 3}
 CHICKEN_SIZE_FROM_NUM = {1: "Small", 2: "Medium", 3: "Big"}
 
-FORM_STRUCTURE = {
-    "Stock": {
-        "Ajker Kena": [
-            ("chandan_quantity_kg", "Chandan Quantity (KG)", "kg"),
-            ("chandan_price_per_kg", "Chandan Price per KG", "number"),
-            ("chandan_payment", "Chandan Payment", "number"),
-            ("sabir_quantity_kg", "Sabir Quantity (KG)", "kg"),
-            ("sabir_price_per_kg", "Sabir Price per KG", "number"),
-            ("sabir_payment", "Sabir Payment", "number"),
-            ("snandi_quantity_kg", "SNandi Quantity (KG)", "kg"),
-            ("snandi_price_per_kg", "SNandi Price per KG", "number"),
-            ("snandi_payment", "SNandi Payment", "number"),
-            ("stock_other1_quantity_kg", "Other1 Quantity (KG)", "kg"),
-            ("stock_other1_price_per_kg", "Other1 Price per KG", "number"),
-            ("stock_other1_payment", "Other1 Payment", "number"),
-            ("stock_other2_quantity_kg", "Other2 Quantity (KG)", "kg"),
-            ("stock_other2_price_per_kg", "Other2 Price per KG", "number"),
-            ("stock_other2_payment", "Other2 Payment", "number"),
-            ("ajke_mal_pore_ache_kg", "Ajke Mal Pore Ache (KG)", "kg"),
-        ],
+CATEGORIES = {
+    "stock": {
+        "table": "business_stock",
+        "label": "Stock",
+        "subcats": {
+            "Ajker Kena": [
+                ("chandan_quantity_kg", "Chandan Quantity (KG)", "kg"),
+                ("chandan_price_per_kg", "Chandan Price per KG", "number"),
+                ("chandan_payment", "Chandan Payment", "number"),
+                ("sabir_quantity_kg", "Sabir Quantity (KG)", "kg"),
+                ("sabir_price_per_kg", "Sabir Price per KG", "number"),
+                ("sabir_payment", "Sabir Payment", "number"),
+                ("snandi_quantity_kg", "SNandi Quantity (KG)", "kg"),
+                ("snandi_price_per_kg", "SNandi Price per KG", "number"),
+                ("snandi_payment", "SNandi Payment", "number"),
+                ("stock_other1_quantity_kg", "Other1 Quantity (KG)", "kg"),
+                ("stock_other1_price_per_kg", "Other1 Price per KG", "number"),
+                ("stock_other1_payment", "Other1 Payment", "number"),
+                ("stock_other2_quantity_kg", "Other2 Quantity (KG)", "kg"),
+                ("stock_other2_price_per_kg", "Other2 Price per KG", "number"),
+                ("stock_other2_payment", "Other2 Payment", "number"),
+                ("ajke_mal_pore_ache_kg", "Ajke Mal Pore Ache (KG)", "kg"),
+            ],
+        },
     },
-    "Sales": {
-        "Hindusthan": [
-            ("hotel1_sales_kg", "Hotel1 Sales (KG)", "kg"),
-            ("hotel1_price_per_kg", "Hotel1 Price per KG", "number"),
-            ("hotel1_payment", "Hotel1 Payment", "number"),
-        ],
-        "Other1": [
-            ("hotel2_sales_kg", "Hotel2 Sales (KG)", "kg"),
-            ("hotel2_price_per_kg", "Hotel2 Price per KG", "number"),
-            ("hotel2_payment", "Hotel2 Payment", "number"),
-        ],
-        "Other2": [
-            ("hotel3_sales_kg", "Hotel3 Sales (KG)", "kg"),
-            ("hotel3_price_per_kg", "Hotel3 Price per KG", "number"),
-            ("hotel3_payment", "Hotel3 Payment", "number"),
-        ],
-        "Dokan": [
-            ("chicken_size", "Chicken Size", "chicken_size"),
-            ("mangso_price_per_kg", "Mangso Price per KG", "number"),
-            ("gota_customer_sales_kg", "Gota Customer Sales (KG)", "kg"),
-            ("gota_customer_price_per_kg", "Gota Customer Price per KG", "number"),
-            ("gota_dokandar_sales_kg", "Gota Dokandar Sales (KG)", "kg"),
-            ("gota_dokandar_price_per_kg", "Gota Dokandar Price per KG", "number"),
-            ("chhat_sales_kg", "Chhat Sales (KG)", "kg"),
-            ("chhat_price_per_kg", "Chhat Price per KG", "number"),
-        ],
+    "hotel_sales": {
+        "table": "business_hotel_sales",
+        "label": "Hotel Sales",
+        "subcats": {
+            "Hindusthan": [
+                ("hotel1_sales_kg", "Hotel1 Sales (KG)", "kg"),
+                ("hotel1_price_per_kg", "Hotel1 Price per KG", "number"),
+                ("hotel1_payment", "Hotel1 Payment", "number"),
+            ],
+            "Other1": [
+                ("hotel2_sales_kg", "Hotel2 Sales (KG)", "kg"),
+                ("hotel2_price_per_kg", "Hotel2 Price per KG", "number"),
+                ("hotel2_payment", "Hotel2 Payment", "number"),
+            ],
+            "Other2": [
+                ("hotel3_sales_kg", "Hotel3 Sales (KG)", "kg"),
+                ("hotel3_price_per_kg", "Hotel3 Price per KG", "number"),
+                ("hotel3_payment", "Hotel3 Payment", "number"),
+            ],
+        },
     },
-    "Cashflow": {
-        "": [
-            ("total_cash_ache", "Total Cash Ache", "number"),
-            ("phonepe_balance", "PhonePe Balance", "number"),
-            ("phonepe_aseche", "PhonePe Aseche", "number"),
-            ("phonepe_payment_hoyeche", "PhonePe Payment Hoyeche", "number"),
-            ("ajker_dokane_dhar_diyeche", "Ajker Dokane Dhar Diyeche", "number"),
-            ("ajke_dhar_aday_hoyeche", "Ajke Dhar Aday Hoyeche", "number"),
-            ("ajker_advance_payment_aseche", "Ajker Advance Payment Aseche", "number"),
-            ("ajke_mangso_pore_ache", "Ajke Mangso Pore Ache", "number"),
-            ("murgi_mangso_loss", "Murgi Mangso Loss", "number"),
-        ],
+    "dokan_sales": {
+        "table": "business_dokan_sales",
+        "label": "Dokan Sales",
+        "subcats": {
+            "Dokan": [
+                ("chicken_size", "Chicken Size", "chicken_size"),
+                ("mangso_price_per_kg", "Mangso Price per KG", "number"),
+                ("gota_customer_sales_kg", "Gota Customer Sales (KG)", "kg"),
+                ("gota_customer_price_per_kg", "Gota Customer Price per KG", "number"),
+                ("gota_dokandar_sales_kg", "Gota Dokandar Sales (KG)", "kg"),
+                ("gota_dokandar_price_per_kg", "Gota Dokandar Price per KG", "number"),
+                ("chhat_sales_kg", "Chhat Sales (KG)", "kg"),
+                ("chhat_price_per_kg", "Chhat Price per KG", "number"),
+            ],
+        },
     },
-    "Expense": {
-        "": [
-            ("emi_box", "EMI Box", "number"),
-            ("labour", "Labour", "number"),
-            ("desi_murgi", "Desi Murgi", "number"),
-            ("murgi_mash", "Murgi Mash", "number"),
-            ("susan_labour", "Susan Labour", "number"),
-            ("paper", "Paper", "number"),
-            ("bazar", "Bazar", "number"),
-            ("gari_vara", "Gari Vara", "number"),
-            ("gas", "Gas", "number"),
-            ("expense_other1", "Other1", "number"),
-            ("expense_other2", "Other2", "number"),
-            ("expense_other3", "Other3", "number"),
-            ("expense_other4", "Other4", "number"),
-            ("expense_other5", "Other5", "number"),
-        ],
+    "cashflow": {
+        "table": "business_cashflow",
+        "label": "Cashflow",
+        "subcats": {
+            "": [
+                ("total_cash_ache", "Total Cash Ache", "number"),
+                ("phonepe_balance", "PhonePe Balance", "number"),
+                ("phonepe_aseche", "PhonePe Aseche", "number"),
+                ("phonepe_payment_hoyeche", "PhonePe Payment Hoyeche", "number"),
+                ("ajker_dokane_dhar_diyeche", "Ajker Dokane Dhar Diyeche", "number"),
+                ("ajke_dhar_aday_hoyeche", "Ajke Dhar Aday Hoyeche", "number"),
+                ("ajker_advance_payment_aseche", "Ajker Advance Payment Aseche", "number"),
+                ("ajke_mangso_pore_ache", "Ajke Mangso Pore Ache", "number"),
+                ("murgi_mangso_loss", "Murgi Mangso Loss", "number"),
+            ],
+        },
     },
-    "Personal Dhar": {
-        "": [
-            ("vodu", "Vodu", "number"),
-            ("atanu", "Atanu", "number"),
-            ("personal_other1", "Other1", "number"),
-            ("personal_other2", "Other2", "number"),
-            ("personal_other3", "Other3", "number"),
-            ("personal_other4", "Other4", "number"),
-            ("personal_other5", "Other5", "number"),
-        ],
+    "expense": {
+        "table": "business_expense",
+        "label": "Expense",
+        "subcats": {
+            "": [
+                ("emi_box", "EMI Box", "number"),
+                ("labour", "Labour", "number"),
+                ("desi_murgi", "Desi Murgi", "number"),
+                ("murgi_mash", "Murgi Mash", "number"),
+                ("susan_labour", "Susan Labour", "number"),
+                ("paper", "Paper", "number"),
+                ("bazar", "Bazar", "number"),
+                ("gari_vara", "Gari Vara", "number"),
+                ("gas", "Gas", "number"),
+                ("expense_other1", "Other1", "number"),
+                ("expense_other2", "Other2", "number"),
+                ("expense_other3", "Other3", "number"),
+                ("expense_other4", "Other4", "number"),
+                ("expense_other5", "Other5", "number"),
+            ],
+        },
+    },
+    "personal_dhar": {
+        "table": "business_personal_dhar",
+        "label": "Personal Dhar",
+        "subcats": {
+            "": [
+                ("vodu", "Vodu", "number"),
+                ("atanu", "Atanu", "number"),
+                ("personal_other1", "Other1", "number"),
+                ("personal_other2", "Other2", "number"),
+                ("personal_other3", "Other3", "number"),
+                ("personal_other4", "Other4", "number"),
+                ("personal_other5", "Other5", "number"),
+            ],
+        },
     },
 }
 
-ALL_FIELD_NAMES = [
-    field for cats in FORM_STRUCTURE.values() for fields in cats.values() for field, _, _ in fields
-]
+
+def category_field_names(cat: dict) -> list:
+    return [f for fields in cat["subcats"].values() for f, _, _ in fields]
 
 
-def render_category_fields(prefix: str, defaults: dict = None):
-    """Renders every category/subcategory field. Must be called inside an
-    active st.form(). Returns nothing — read values back via st.session_state
-    using the same keys ({prefix}_{field_name}) after the form submits."""
-    defaults = defaults or {}
-    for category, subcats in FORM_STRUCTURE.items():
-        with st.expander(f"📁 {category}", expanded=False):
-            for subcat, fields in subcats.items():
-                if subcat:
-                    st.markdown(f"**{subcat}**")
-                for field_name, label, ftype in fields:
-                    key = f"{prefix}_{field_name}"
-                    if ftype == "kg":
-                        default_val = float(defaults.get(field_name, 0) or 0)
-                        st.number_input(
-                            label, value=default_val, step=0.1, format="%.2f", key=key
-                        )
-                    elif ftype == "number":
-                        default_val = float(defaults.get(field_name, 0) or 0)
-                        st.number_input(label, value=default_val, step=1.0, key=key)
-                    elif ftype.startswith("select:"):
-                        options = ftype.split(":", 1)[1].split(",")
-                        default_val = defaults.get(field_name) or options[0]
-                        idx = options.index(default_val) if default_val in options else 0
-                        st.selectbox(label, options, index=idx, key=key)
-                    elif ftype == "chicken_size":
-                        # Stored in the DB as numeric (1/2/3); shown in the
-                        # UI as a dropdown with the text labels.
-                        # Defaults to "Medium" when no prior value exists.
-                        default_num = defaults.get(field_name, 2)
-                        default_label = CHICKEN_SIZE_FROM_NUM.get(
-                            default_num, "Medium"
-                        )
-                        idx = CHICKEN_SIZE_OPTIONS.index(default_label)
-                        st.selectbox(label, CHICKEN_SIZE_OPTIONS, index=idx, key=key)
+def render_single_field(field_name, label, ftype, key, defaults, disabled):
+    if ftype == "kg":
+        default_val = float(defaults.get(field_name, 0) or 0)
+        st.number_input(label, value=default_val, step=0.1, format="%.2f", key=key, disabled=disabled)
+    elif ftype == "number":
+        default_val = float(defaults.get(field_name, 0) or 0)
+        st.number_input(label, value=default_val, step=1.0, key=key, disabled=disabled)
+    elif ftype == "chicken_size":
+        default_num = defaults.get(field_name, 2)
+        default_label = CHICKEN_SIZE_FROM_NUM.get(default_num, "Medium")
+        idx = CHICKEN_SIZE_OPTIONS.index(default_label)
+        st.selectbox(label, CHICKEN_SIZE_OPTIONS, index=idx, key=key, disabled=disabled)
+    elif ftype.startswith("select:"):
+        options = ftype.split(":", 1)[1].split(",")
+        default_val = defaults.get(field_name) or options[0]
+        idx = options.index(default_val) if default_val in options else 0
+        st.selectbox(label, options, index=idx, key=key, disabled=disabled)
 
 
-def collect_field_values(prefix: str) -> dict:
-    """Reads back the values of every field for a given prefix from
-    session_state after a form submit."""
+def collect_category_values(cat_key: str, cat: dict) -> dict:
     values = {}
-    for field_name in ALL_FIELD_NAMES:
-        raw = st.session_state[f"{prefix}_{field_name}"]
-        if field_name == "chicken_size":
+    for field_name, _, ftype in [f for fields in cat["subcats"].values() for f in fields]:
+        raw = st.session_state[f"{cat_key}_{field_name}"]
+        if ftype == "chicken_size":
             values[field_name] = CHICKEN_SIZE_TO_NUM.get(raw)
         else:
             values[field_name] = raw
     return values
 
+
+def fetch_category_row(table_name: str, entry_date: date):
+    result = (
+        supabase.table(table_name)
+        .select("*")
+        .eq("entry_date", str(entry_date))
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
 # ---------------------------------------------------------------------------
 # CALCULATION LOGIC
-# NOTE: these are starting-point aggregates only — confirm the real profit /
+# NOTE: starting-point aggregates only — confirm the real profit /
 # reconciliation formula with the business owner and adjust as needed.
 # ---------------------------------------------------------------------------
 def calculate_metrics(row: dict) -> dict:
+    g = lambda k: row.get(k, 0) or 0
+
     total_stock_quantity_kg = (
-        row["chandan_quantity_kg"] + row["sabir_quantity_kg"] + row["snandi_quantity_kg"]
-        + row["stock_other1_quantity_kg"] + row["stock_other2_quantity_kg"]
+        g("chandan_quantity_kg") + g("sabir_quantity_kg") + g("snandi_quantity_kg")
+        + g("stock_other1_quantity_kg") + g("stock_other2_quantity_kg")
     )
     total_stock_cost = (
-        row["chandan_payment"] + row["sabir_payment"] + row["snandi_payment"]
-        + row["stock_other1_payment"] + row["stock_other2_payment"]
+        g("chandan_payment") + g("sabir_payment") + g("snandi_payment")
+        + g("stock_other1_payment") + g("stock_other2_payment")
     )
     total_sales_quantity_kg = (
-        row["hotel1_sales_kg"] + row["hotel2_sales_kg"] + row["hotel3_sales_kg"]
-        + row["gota_customer_sales_kg"] + row["gota_dokandar_sales_kg"] + row["chhat_sales_kg"]
+        g("hotel1_sales_kg") + g("hotel2_sales_kg") + g("hotel3_sales_kg")
+        + g("gota_customer_sales_kg") + g("gota_dokandar_sales_kg") + g("chhat_sales_kg")
     )
     total_sales_revenue = (
-        row["hotel1_payment"] + row["hotel2_payment"] + row["hotel3_payment"]
-        + row["gota_customer_sales_kg"] * row["gota_customer_price_per_kg"]
-        + row["gota_dokandar_sales_kg"] * row["gota_dokandar_price_per_kg"]
-        + row["chhat_sales_kg"] * row["chhat_price_per_kg"]
+        g("hotel1_payment") + g("hotel2_payment") + g("hotel3_payment")
+        + g("gota_customer_sales_kg") * g("gota_customer_price_per_kg")
+        + g("gota_dokandar_sales_kg") * g("gota_dokandar_price_per_kg")
+        + g("chhat_sales_kg") * g("chhat_price_per_kg")
     )
     expense_fields = [
         "emi_box", "labour", "desi_murgi", "murgi_mash", "susan_labour", "paper",
         "bazar", "gari_vara", "gas", "expense_other1", "expense_other2",
         "expense_other3", "expense_other4", "expense_other5",
     ]
-    total_expense = sum(row[f] for f in expense_fields)
+    total_expense = sum(g(f) for f in expense_fields)
 
     personal_fields = [
         "vodu", "atanu", "personal_other1", "personal_other2",
         "personal_other3", "personal_other4", "personal_other5",
     ]
-    total_personal_dhar = sum(row[f] for f in personal_fields)
+    total_personal_dhar = sum(g(f) for f in personal_fields)
 
     estimated_profit = total_sales_revenue - total_stock_cost - total_expense
 
@@ -283,244 +339,292 @@ def calculate_metrics(row: dict) -> dict:
         "estimated_profit": round(estimated_profit, 2),
     }
 
-# ---------------------------------------------------------------------------
-# UPDATE LOGIC
-# ---------------------------------------------------------------------------
-def update_entry(input_id: int, new_date, field_values: dict):
-    update_payload = {
-        "entry_date": str(new_date),
-        "updated_at": now_ist().isoformat(),
-        **field_values,
-    }
-    supabase.table(INPUT_TABLE).update(update_payload).eq("id", input_id).execute()
 
-    metrics = calculate_metrics(field_values)
-    supabase.table(OUTPUT_TABLE).update({
-        "entry_date": str(new_date),
+def recompute_metrics(entry_date: date, submitted_by: str):
+    """Pulls whatever data exists across all category tables for this date
+    and recalculates/upserts the combined output row."""
+    combined = {}
+    for cat in CATEGORIES.values():
+        row = fetch_category_row(cat["table"], entry_date) or {}
+        for field_name in category_field_names(cat):
+            combined[field_name] = row.get(field_name, 0)
+
+    metrics = calculate_metrics(combined)
+    existing = fetch_category_row(OUTPUT_TABLE, entry_date)
+    payload = {
+        "entry_date": str(entry_date),
+        "submitted_by": submitted_by,
         "updated_at": now_ist().isoformat(),
         **metrics,
-    }).eq("input_id", input_id).execute()
-
-    return metrics
-
-
-def render_edit_section(rows: list, key_prefix: str):
-    if not rows:
-        return
-
-    with st.expander("✏️ Edit an entry"):
-        options = {
-            f"ID {r['id']} — {r['entry_date']} (by {r['submitted_by']})": r
-            for r in rows
-        }
-        choice = st.selectbox(
-            "Select entry to edit", list(options.keys()), key=f"{key_prefix}_edit_select"
-        )
-        row = options[choice]
-
-        with st.form(f"{key_prefix}_edit_form"):
-            new_date = st.date_input(
-                "Date", value=date.fromisoformat(row["entry_date"]), key=f"{key_prefix}_edit_date"
-            )
-            render_category_fields(f"{key_prefix}_edit", defaults=row)
-            save = st.form_submit_button("Save changes", use_container_width=True)
-
-        if save:
-            field_values = collect_field_values(f"{key_prefix}_edit")
-            st.session_state["pending_edit"] = {
-                "input_id": row["id"],
-                "new_date": new_date,
-                "field_values": field_values,
-            }
-            st.rerun()
-
-    if "pending_edit" in st.session_state:
-        confirm_edit_dialog()
-
-
-@st.dialog("Confirm Update")
-def confirm_edit_dialog():
-    data = st.session_state["pending_edit"]
-    st.write(f"Update entry for **{data['new_date']}**?")
-    st.caption("This will recalculate and update the linked output metrics too.")
-
-    col1, col2 = st.columns(2)
-    if col1.button("Confirm Update", use_container_width=True):
-        update_entry(data["input_id"], data["new_date"], data["field_values"])
-        st.session_state.pop("pending_edit", None)
-        st.success("Entry updated.")
-        st.rerun()
-    if col2.button("Cancel", use_container_width=True):
-        st.session_state.pop("pending_edit", None)
-        st.rerun()
+    }
+    if existing:
+        supabase.table(OUTPUT_TABLE).update(payload).eq("entry_date", str(entry_date)).execute()
+    else:
+        payload["created_at"] = now_ist().isoformat()
+        supabase.table(OUTPUT_TABLE).insert(payload).execute()
 
 # ---------------------------------------------------------------------------
-# DELETE LOGIC
-# ---------------------------------------------------------------------------
-def delete_entry(input_id: int):
-    supabase.table(OUTPUT_TABLE).delete().eq("input_id", input_id).execute()
-    supabase.table(INPUT_TABLE).delete().eq("id", input_id).execute()
-
-
-def render_delete_section(rows: list, key_prefix: str):
-    if not rows:
-        return
-
-    with st.expander("🗑️ Delete an entry"):
-        options = {
-            f"ID {r['id']} — {r['entry_date']} (by {r['submitted_by']})": r
-            for r in rows
-        }
-        choice = st.selectbox(
-            "Select entry to delete", list(options.keys()), key=f"{key_prefix}_delete_select"
-        )
-        row = options[choice]
-
-        if st.button("Delete this entry", key=f"{key_prefix}_delete_btn", use_container_width=True):
-            st.session_state["pending_delete"] = row["id"]
-            st.rerun()
-
-    if "pending_delete" in st.session_state:
-        confirm_delete_dialog()
-
-
-@st.dialog("Confirm Deletion")
-def confirm_delete_dialog():
-    st.write("Sure want to delete this data from both input and output table?")
-    col1, col2 = st.columns(2)
-    if col1.button("Yes, Delete", use_container_width=True):
-        delete_entry(st.session_state["pending_delete"])
-        st.session_state.pop("pending_delete", None)
-        st.success("Entry deleted from both tables.")
-        st.rerun()
-    if col2.button("Cancel", use_container_width=True):
-        st.session_state.pop("pending_delete", None)
-        st.rerun()
-
-# ---------------------------------------------------------------------------
-# BUSINESS USER VIEW
+# BUSINESS USER: per-category submit section (locks after first submit)
 # ---------------------------------------------------------------------------
 @st.dialog("Confirm Submission")
-def confirm_submit_dialog():
-    data = st.session_state["pending_entry"]
-    st.write(f"Save entry for **{data['entry_date']}**?")
-    st.caption("This will be stored in the Input table and metrics calculated into the Output table.")
+def confirm_category_submit_dialog():
+    pending = st.session_state["pending_category_submit"]
+    cat = CATEGORIES[pending["cat_key"]]
+    st.write(f"Save **{cat['label']}** data for **{pending['entry_date']}**?")
+    st.caption("Once saved, these fields will be locked and cannot be edited by business users.")
 
     col1, col2 = st.columns(2)
     if col1.button("Confirm & Submit", use_container_width=True):
-        entry_date = data["entry_date"]
-        field_values = data["field_values"]
-
-        input_row = {
-            "entry_date": str(entry_date),
+        row = {
+            "entry_date": str(pending["entry_date"]),
             "submitted_by": st.session_state["username"],
             "created_at": now_ist().isoformat(),
-            **field_values,
+            **pending["values"],
         }
-        input_result = supabase.table(INPUT_TABLE).insert(input_row).execute()
-        input_id = input_result.data[0]["id"]
-
-        metrics = calculate_metrics(field_values)
-        output_row = {
-            "entry_date": str(entry_date),
-            "submitted_by": st.session_state["username"],
-            "input_id": input_id,
-            "created_at": now_ist().isoformat(),
-            **metrics,
-        }
-        supabase.table(OUTPUT_TABLE).insert(output_row).execute()
-
-        st.session_state.pop("pending_entry", None)
-        st.success("Saved successfully.")
+        try:
+            supabase.table(cat["table"]).insert(row).execute()
+            set_flash("success", f"{cat['label']} data successfully saved.")
+        except Exception as e:
+            set_flash("error", f"Failed to save {cat['label']} data: {e}")
+        st.session_state.pop("pending_category_submit", None)
         st.rerun()
     if col2.button("Cancel", use_container_width=True):
-        st.session_state.pop("pending_entry", None)
+        st.session_state.pop("pending_category_submit", None)
         st.rerun()
+
+
+def render_category_submit_section(cat_key: str, entry_date: date):
+    cat = CATEGORIES[cat_key]
+    existing = fetch_category_row(cat["table"], entry_date)
+    locked = existing is not None
+
+    with st.expander(f"📁 {cat['label']}", expanded=not locked):
+        if locked:
+            st.info(f"Data for {entry_date} is already submitted and locked.")
+        for subcat, fields in cat["subcats"].items():
+            if subcat:
+                st.markdown(f"**{subcat}**")
+            for field_name, label, ftype in fields:
+                key = f"{cat_key}_{field_name}"
+                render_single_field(field_name, label, ftype, key, existing or {}, locked)
+
+        if st.button(
+            f"Submit {cat['label']}", key=f"{cat_key}_submit_btn",
+            disabled=locked, use_container_width=True,
+        ):
+            values = collect_category_values(cat_key, cat)
+            st.session_state["pending_category_submit"] = {
+                "cat_key": cat_key, "entry_date": entry_date, "values": values,
+            }
+            st.rerun()
+
+    if st.session_state.get("pending_category_submit", {}).get("cat_key") == cat_key:
+        confirm_category_submit_dialog()
+
+
+MANDATORY_CATEGORIES = [k for k in CATEGORIES if k != "personal_dhar"]
+
+
+def render_calculate_section(entry_date: date):
+    st.markdown("---")
+
+    if st.button("🧮 CALCULATE", key="calculate_btn", use_container_width=True, type="primary"):
+        missing = []
+        for cat_key in MANDATORY_CATEGORIES:
+            cat = CATEGORIES[cat_key]
+            if not fetch_category_row(cat["table"], entry_date):
+                missing.append(cat["label"])
+
+        if missing:
+            set_flash(
+                "error",
+                "Please submit data for the following mandatory categories "
+                f"before calculating: {', '.join(missing)}.",
+            )
+        else:
+            try:
+                recompute_metrics(entry_date, st.session_state["username"])
+                set_flash("success", "Metrics calculated successfully.")
+            except Exception as e:
+                set_flash("error", f"Failed to calculate metrics: {e}")
+        st.rerun()
+
+    output_row = fetch_category_row(OUTPUT_TABLE, entry_date)
+    if output_row:
+        profit = output_row["estimated_profit"]
+        is_profit = profit >= 0
+        bg = "#D8F3DC" if is_profit else "#F8D7DA"
+        fg = "#0B6E4F" if is_profit else "#B00020"
+        label = "Profit" if is_profit else "Loss"
+        st.markdown(
+            f"""
+            <div style="
+                background-color:{bg};
+                color:{fg};
+                padding:22px;
+                text-align:center;
+                font-size:34px;
+                font-weight:800;
+                border-radius:10px;
+                margin-top:16px;
+            ">
+                {label}: ₹{abs(profit):,.2f}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 
 def business_view():
     show_banner()
+    show_flash()
+    inject_calculate_button_style()
     st.title("📝 Business Data Entry")
 
     tab1, tab2 = st.tabs(["Add Entry", "View My Input Data (Read-only)"])
 
     with tab1:
-        with st.form("add_entry_form"):
-            entry_date = st.date_input("Date", value=today_ist(), key="add_entry_date")
-            render_category_fields("add")
-            submitted = st.form_submit_button("Submit", use_container_width=True)
+        entry_date = st.date_input("Date", value=today_ist(), key="shared_entry_date")
+        for cat_key in CATEGORIES:
+            render_category_submit_section(cat_key, entry_date)
 
-        if submitted:
-            existing = (
-                supabase.table(INPUT_TABLE)
-                .select("id")
-                .eq("entry_date", str(entry_date))
-                .execute()
-            )
-            if existing.data:
-                st.error(
-                    f"An entry already exists for {entry_date}. "
-                    "Only one input entry is allowed per date. "
-                    "Please contact admin if this needs correction."
-                )
-            else:
-                field_values = collect_field_values("add")
-                st.session_state["pending_entry"] = {
-                    "entry_date": entry_date,
-                    "field_values": field_values,
-                }
-                st.rerun()
-
-    if "pending_entry" in st.session_state:
-        confirm_submit_dialog()
+        render_calculate_section(entry_date)
 
     with tab2:
         view_date = st.date_input("Select date", value=today_ist(), key="business_view_date")
+        username = st.session_state["username"].strip()
 
-        result = (
-            supabase.table(INPUT_TABLE)
-            .select("*")
-            .eq("entry_date", str(view_date))
-            .ilike("submitted_by", st.session_state["username"].strip())
-            .execute()
-        )
-        rows = result.data
+        any_data = False
+        for cat_key, cat in CATEGORIES.items():
+            row = fetch_category_row(cat["table"], view_date)
+            if row and row.get("submitted_by", "").strip().lower() == username.lower():
+                any_data = True
+                st.subheader(cat["label"])
+                st.dataframe([row], use_container_width=True)
 
-        if rows:
-            st.dataframe(rows, use_container_width=True)
-        else:
+        if not any_data:
             st.info("No input data found for this date.")
 
 # ---------------------------------------------------------------------------
-# ADMIN VIEW
+# ADMIN: per-category save (always editable) + delete + combined output
 # ---------------------------------------------------------------------------
-def fetch_rows(table_name: str, entry_date: date):
-    result = (
-        supabase.table(table_name)
-        .select("*")
-        .eq("entry_date", str(entry_date))
-        .execute()
+def render_admin_category_section(cat_key: str, entry_date: date):
+    cat = CATEGORIES[cat_key]
+    existing = fetch_category_row(cat["table"], entry_date)
+
+    with st.expander(f"📁 {cat['label']}", expanded=False):
+        for subcat, fields in cat["subcats"].items():
+            if subcat:
+                st.markdown(f"**{subcat}**")
+            for field_name, label, ftype in fields:
+                key = f"admin_{cat_key}_{field_name}"
+                render_single_field(field_name, label, ftype, key, existing or {}, disabled=False)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            save_clicked = st.button(
+                f"Save {cat['label']}", key=f"admin_{cat_key}_save_btn", use_container_width=True
+            )
+        with col2:
+            delete_clicked = False
+            if existing:
+                delete_clicked = st.button(
+                    f"Delete {cat['label']} data", key=f"admin_{cat_key}_delete_btn",
+                    use_container_width=True,
+                )
+
+        if save_clicked:
+            values = collect_category_values(f"admin_{cat_key}", cat)
+            st.session_state["pending_admin_save"] = {
+                "cat_key": cat_key, "entry_date": entry_date, "values": values,
+                "is_update": existing is not None,
+            }
+            st.rerun()
+
+        if delete_clicked:
+            st.session_state["pending_admin_delete"] = {"cat_key": cat_key, "entry_date": entry_date}
+            st.rerun()
+
+    if st.session_state.get("pending_admin_save", {}).get("cat_key") == cat_key:
+        confirm_admin_save_dialog()
+    if st.session_state.get("pending_admin_delete", {}).get("cat_key") == cat_key:
+        confirm_admin_delete_dialog()
+
+
+@st.dialog("Confirm Save")
+def confirm_admin_save_dialog():
+    pending = st.session_state["pending_admin_save"]
+    cat = CATEGORIES[pending["cat_key"]]
+    action = "Update" if pending["is_update"] else "Add"
+    st.write(f"{action} **{cat['label']}** data for **{pending['entry_date']}**?")
+    st.caption("This will recalculate the combined output metrics for this date.")
+
+    col1, col2 = st.columns(2)
+    if col1.button("Confirm", use_container_width=True):
+        table_name = cat["table"]
+        entry_date = pending["entry_date"]
+        values = pending["values"]
+        try:
+            if pending["is_update"]:
+                payload = {"updated_at": now_ist().isoformat(), **values}
+                supabase.table(table_name).update(payload).eq("entry_date", str(entry_date)).execute()
+            else:
+                payload = {
+                    "entry_date": str(entry_date),
+                    "submitted_by": st.session_state["username"],
+                    "created_at": now_ist().isoformat(),
+                    **values,
+                }
+                supabase.table(table_name).insert(payload).execute()
+
+            recompute_metrics(entry_date, st.session_state["username"])
+            set_flash("success", f"{cat['label']} data successfully saved.")
+        except Exception as e:
+            set_flash("error", f"Failed to save {cat['label']} data: {e}")
+        st.session_state.pop("pending_admin_save", None)
+        st.rerun()
+    if col2.button("Cancel", use_container_width=True):
+        st.session_state.pop("pending_admin_save", None)
+        st.rerun()
+
+
+@st.dialog("Confirm Deletion")
+def confirm_admin_delete_dialog():
+    pending = st.session_state["pending_admin_delete"]
+    cat = CATEGORIES[pending["cat_key"]]
+    st.write(
+        f"Sure want to delete the **{cat['label']}** data for "
+        f"**{pending['entry_date']}**? The combined output metrics for "
+        f"this date will also be recalculated."
     )
-    return result.data
+    col1, col2 = st.columns(2)
+    if col1.button("Yes, Delete", use_container_width=True):
+        try:
+            supabase.table(cat["table"]).delete().eq("entry_date", str(pending["entry_date"])).execute()
+            recompute_metrics(pending["entry_date"], st.session_state["username"])
+            set_flash("success", f"{cat['label']} data deleted.")
+        except Exception as e:
+            set_flash("error", f"Failed to delete {cat['label']} data: {e}")
+        st.session_state.pop("pending_admin_delete", None)
+        st.rerun()
+    if col2.button("Cancel", use_container_width=True):
+        st.session_state.pop("pending_admin_delete", None)
+        st.rerun()
 
 
-def show_output_totals(rows: list):
-    if not rows:
+def show_output_totals(row: dict):
+    if not row:
         return
-    total_stock_cost = sum(r["total_stock_cost"] for r in rows)
-    total_sales_revenue = sum(r["total_sales_revenue"] for r in rows)
-    total_expense = sum(r["total_expense"] for r in rows)
-    total_profit = sum(r["estimated_profit"] for r in rows)
-
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Stock Cost", f"{total_stock_cost:,.2f}")
-    c2.metric("Total Sales Revenue", f"{total_sales_revenue:,.2f}")
-    c3.metric("Total Expense", f"{total_expense:,.2f}")
-    c4.metric("Estimated Profit", f"{total_profit:,.2f}")
+    c1.metric("Total Stock Cost", f"{row['total_stock_cost']:,.2f}")
+    c2.metric("Total Sales Revenue", f"{row['total_sales_revenue']:,.2f}")
+    c3.metric("Total Expense", f"{row['total_expense']:,.2f}")
+    c4.metric("Estimated Profit", f"{row['estimated_profit']:,.2f}")
 
 
 def admin_view():
     show_banner()
+    show_flash()
     st.title("📊 Admin Dashboard")
 
     tab1, tab2 = st.tabs(["Single Date View", "Compare Two Dates"])
@@ -528,27 +632,23 @@ def admin_view():
     with tab1:
         selected_date = st.date_input("Select date", value=today_ist(), key="single_date")
 
-        input_rows = fetch_rows(INPUT_TABLE, selected_date)
-        output_rows = fetch_rows(OUTPUT_TABLE, selected_date)
-
-        st.subheader("Input data")
-        if input_rows:
-            st.dataframe(input_rows, use_container_width=True)
-            render_edit_section(input_rows, key_prefix="admin")
-            render_delete_section(input_rows, key_prefix="admin")
-        else:
-            st.info("No input entries for this date.")
+        st.subheader("Input data by category")
+        for cat_key in CATEGORIES:
+            render_admin_category_section(cat_key, selected_date)
 
         st.subheader("Output (calculated metrics)")
-        if output_rows:
-            st.dataframe(output_rows, use_container_width=True)
-            show_output_totals(output_rows)
+        output_row = fetch_category_row(OUTPUT_TABLE, selected_date)
+        if output_row:
+            st.dataframe([output_row], use_container_width=True)
+            show_output_totals(output_row)
         else:
-            st.info("No output entries for this date.")
+            st.info("No output data for this date yet.")
 
     with tab2:
-        source = st.radio("Data source to compare", ["Input", "Output"], horizontal=True)
-        table_name = INPUT_TABLE if source == "Input" else OUTPUT_TABLE
+        source_options = {cat["label"]: cat["table"] for cat in CATEGORIES.values()}
+        source_options["Output (Metrics)"] = OUTPUT_TABLE
+        source_label = st.selectbox("Data source to compare", list(source_options.keys()))
+        table_name = source_options[source_label]
 
         col_a, col_b = st.columns(2)
         with col_a:
@@ -556,26 +656,26 @@ def admin_view():
         with col_b:
             date_b = st.date_input("Date B", value=today_ist(), key="date_b")
 
-        rows_a = fetch_rows(table_name, date_a)
-        rows_b = fetch_rows(table_name, date_b)
+        row_a = fetch_category_row(table_name, date_a)
+        row_b = fetch_category_row(table_name, date_b)
 
         result_col_a, result_col_b = st.columns(2)
         with result_col_a:
-            st.subheader(f"{source} — {date_a}")
-            if rows_a:
-                st.dataframe(rows_a, use_container_width=True)
-                if source == "Output":
-                    show_output_totals(rows_a)
+            st.subheader(f"{source_label} — {date_a}")
+            if row_a:
+                st.dataframe([row_a], use_container_width=True)
+                if table_name == OUTPUT_TABLE:
+                    show_output_totals(row_a)
             else:
-                st.info("No entries for this date.")
+                st.info("No entry for this date.")
         with result_col_b:
-            st.subheader(f"{source} — {date_b}")
-            if rows_b:
-                st.dataframe(rows_b, use_container_width=True)
-                if source == "Output":
-                    show_output_totals(rows_b)
+            st.subheader(f"{source_label} — {date_b}")
+            if row_b:
+                st.dataframe([row_b], use_container_width=True)
+                if table_name == OUTPUT_TABLE:
+                    show_output_totals(row_b)
             else:
-                st.info("No entries for this date.")
+                st.info("No entry for this date.")
 
 # ---------------------------------------------------------------------------
 # MAIN ROUTING
