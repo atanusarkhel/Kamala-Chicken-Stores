@@ -122,6 +122,14 @@ def logout_button():
 # CATEGORY DEFINITIONS — one table per category
 # type is "number", "kg", "select:Opt1,Opt2,...", or "chicken_size"
 # ---------------------------------------------------------------------------
+# Default values shown on a blank (not-yet-submitted) form. Only applies
+# when no existing data is found for the date — actual saved values always
+# take priority.
+DEFAULT_FIELD_VALUES = {
+    "chhat_price_per_kg": 140.0,
+    "emi_box": 2500.0,
+}
+
 CHICKEN_SIZE_OPTIONS = ["Small", "Medium", "Big"]
 CHICKEN_SIZE_TO_NUM = {"Small": 1, "Medium": 2, "Big": 3}
 CHICKEN_SIZE_FROM_NUM = {1: "Small", 2: "Medium", 3: "Big"}
@@ -250,11 +258,12 @@ def category_field_names(cat: dict) -> list:
 
 
 def render_single_field(field_name, label, ftype, key, defaults, disabled):
+    fallback = DEFAULT_FIELD_VALUES.get(field_name, 0)
     if ftype == "kg":
-        default_val = float(defaults.get(field_name, 0) or 0)
+        default_val = float(defaults.get(field_name, fallback) or fallback)
         st.number_input(label, value=default_val, step=0.1, format="%.2f", key=key, disabled=disabled)
     elif ftype == "number":
-        default_val = float(defaults.get(field_name, 0) or 0)
+        default_val = float(defaults.get(field_name, fallback) or fallback)
         st.number_input(label, value=default_val, step=1.0, key=key, disabled=disabled)
     elif ftype == "chicken_size":
         default_num = defaults.get(field_name, 2)
@@ -287,6 +296,26 @@ def fetch_category_row(table_name: str, entry_date: date):
         .execute()
     )
     return result.data[0] if result.data else None
+
+
+def format_timestamps_ist(rows: list) -> list:
+    """Supabase/PostgREST always returns timestamptz values as UTC in JSON,
+    regardless of what timezone was used when the value was written. The
+    stored instant is correct either way — this just re-renders
+    created_at/updated_at in IST for display within this app."""
+    formatted = []
+    for row in rows:
+        new_row = dict(row)
+        for field in ("created_at", "updated_at"):
+            val = new_row.get(field)
+            if val:
+                try:
+                    dt = datetime.fromisoformat(str(val).replace("Z", "+00:00"))
+                    new_row[field] = dt.astimezone(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+                except (ValueError, TypeError):
+                    pass
+        formatted.append(new_row)
+    return formatted
 
 # ---------------------------------------------------------------------------
 # CALCULATION LOGIC
@@ -521,7 +550,7 @@ def business_view():
             if row and row.get("submitted_by", "").strip().lower() == username.lower():
                 any_data = True
                 st.subheader(cat["label"])
-                st.dataframe([row], use_container_width=True)
+                st.dataframe(format_timestamps_ist([row]), use_container_width=True)
 
         if not any_data:
             st.info("No input data found for this date.")
@@ -681,7 +710,7 @@ def admin_view():
         st.subheader("Output (calculated metrics)")
         output_row = fetch_category_row(OUTPUT_TABLE, selected_date)
         if output_row:
-            st.dataframe([output_row], use_container_width=True)
+            st.dataframe(format_timestamps_ist([output_row]), use_container_width=True)
             show_output_totals(output_row)
         else:
             st.info("No output data for this date yet.")
@@ -705,7 +734,7 @@ def admin_view():
         with result_col_a:
             st.subheader(f"{source_label} — {date_a}")
             if row_a:
-                st.dataframe([row_a], use_container_width=True)
+                st.dataframe(format_timestamps_ist([row_a]), use_container_width=True)
                 if table_name == OUTPUT_TABLE:
                     show_output_totals(row_a)
             else:
@@ -713,7 +742,7 @@ def admin_view():
         with result_col_b:
             st.subheader(f"{source_label} — {date_b}")
             if row_b:
-                st.dataframe([row_b], use_container_width=True)
+                st.dataframe(format_timestamps_ist([row_b]), use_container_width=True)
                 if table_name == OUTPUT_TABLE:
                     show_output_totals(row_b)
             else:
