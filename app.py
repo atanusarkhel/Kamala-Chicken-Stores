@@ -277,10 +277,10 @@ def render_single_field(field_name, label, ftype, key, defaults, disabled):
         st.selectbox(label, options, index=idx, key=key, disabled=disabled)
 
 
-def collect_category_values(cat_key: str, cat: dict) -> dict:
+def collect_category_values(scope: str, cat: dict) -> dict:
     values = {}
     for field_name, _, ftype in [f for fields in cat["subcats"].values() for f in fields]:
-        raw = st.session_state[f"{cat_key}_{field_name}"]
+        raw = st.session_state[f"{scope}_{field_name}"]
         if ftype == "chicken_size":
             values[field_name] = CHICKEN_SIZE_TO_NUM.get(raw)
         else:
@@ -307,6 +307,29 @@ def fetch_dates_in_range(table_name: str, start_date: date, end_date: date) -> s
         .execute()
     )
     return {r["entry_date"] for r in result.data}
+
+
+def fetch_submission_info_in_range(table_name: str, start_date: date, end_date: date) -> dict:
+    """Returns {entry_date: {submitted_by, created_at, updated_at}} for a
+    table over a date range — used to show who submitted and when."""
+    result = (
+        supabase.table(table_name)
+        .select("entry_date,submitted_by,created_at,updated_at")
+        .gte("entry_date", str(start_date))
+        .lte("entry_date", str(end_date))
+        .execute()
+    )
+    return {r["entry_date"]: r for r in result.data}
+
+
+def to_ist_str(value) -> str:
+    if not value:
+        return ""
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return dt.astimezone(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+    except (ValueError, TypeError):
+        return str(value)
 
 
 def format_timestamps_ist(rows: list) -> list:
@@ -437,6 +460,7 @@ def render_category_submit_section(cat_key: str, entry_date: date):
     cat = CATEGORIES[cat_key]
     existing = fetch_category_row(cat["table"], entry_date)
     locked = existing is not None
+    scope = f"{cat_key}_{entry_date}"
 
     label_prefix = "✅" if locked else "📁"
 
@@ -466,14 +490,14 @@ def render_category_submit_section(cat_key: str, entry_date: date):
             if subcat:
                 st.markdown(f"**{subcat}**")
             for field_name, label, ftype in fields:
-                key = f"{cat_key}_{field_name}"
+                key = f"{scope}_{field_name}"
                 render_single_field(field_name, label, ftype, key, existing or {}, locked)
 
         if st.button(
-            f"Submit {cat['label']}", key=f"{cat_key}_submit_btn",
+            f"Submit {cat['label']}", key=f"{scope}_submit_btn",
             disabled=locked, use_container_width=True,
         ):
-            values = collect_category_values(cat_key, cat)
+            values = collect_category_values(scope, cat)
             st.session_state["pending_category_submit"] = {
                 "cat_key": cat_key, "entry_date": entry_date, "values": values,
             }
@@ -572,6 +596,7 @@ def business_view():
 def render_admin_category_section(cat_key: str, entry_date: date):
     cat = CATEGORIES[cat_key]
     existing = fetch_category_row(cat["table"], entry_date)
+    scope = f"admin_{cat_key}_{entry_date}"
 
     label_prefix = "✅" if existing else "🚩"
     with st.expander(f"{label_prefix} {cat['label']}", expanded=False):
@@ -579,24 +604,24 @@ def render_admin_category_section(cat_key: str, entry_date: date):
             if subcat:
                 st.markdown(f"**{subcat}**")
             for field_name, label, ftype in fields:
-                key = f"admin_{cat_key}_{field_name}"
+                key = f"{scope}_{field_name}"
                 render_single_field(field_name, label, ftype, key, existing or {}, disabled=False)
 
         col1, col2 = st.columns(2)
         with col1:
             save_clicked = st.button(
-                f"Save {cat['label']}", key=f"admin_{cat_key}_save_btn", use_container_width=True
+                f"Save {cat['label']}", key=f"{scope}_save_btn", use_container_width=True
             )
         with col2:
             delete_clicked = False
             if existing:
                 delete_clicked = st.button(
-                    f"Delete {cat['label']} data", key=f"admin_{cat_key}_delete_btn",
+                    f"Delete {cat['label']} data", key=f"{scope}_delete_btn",
                     use_container_width=True,
                 )
 
         if save_clicked:
-            values = collect_category_values(f"admin_{cat_key}", cat)
+            values = collect_category_values(scope, cat)
             st.session_state["pending_admin_save"] = {
                 "cat_key": cat_key, "entry_date": entry_date, "values": values,
                 "is_update": existing is not None,
@@ -723,7 +748,7 @@ def render_monthly_overview():
         cat_key: fetch_dates_in_range(cat["table"], month_start, month_end)
         for cat_key, cat in CATEGORIES.items()
     }
-    output_dates = fetch_dates_in_range(OUTPUT_TABLE, month_start, month_end)
+    output_info = fetch_submission_info_in_range(OUTPUT_TABLE, month_start, month_end)
 
     rows = []
     for day_num in range(1, last_day_num + 1):
@@ -740,7 +765,17 @@ def render_monthly_overview():
             row[cat["label"]] = "✅" if present else "🚩"
             if cat_key in MANDATORY_CATEGORIES and not present:
                 missing_mandatory.append(cat["label"])
-        row["Output"] = "✅" if date_str in output_dates else "🚩"
+
+        info = output_info.get(date_str)
+        if info:
+            row["Output"] = "✅"
+            row["Entered By"] = info.get("submitted_by", "")
+            row["Entered At (IST)"] = to_ist_str(info.get("updated_at") or info.get("created_at"))
+        else:
+            row["Output"] = "🚩"
+            row["Entered By"] = ""
+            row["Entered At (IST)"] = ""
+
         row["Missing (mandatory)"] = ", ".join(missing_mandatory) if missing_mandatory else "—"
         rows.append(row)
 
