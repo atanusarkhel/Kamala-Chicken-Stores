@@ -695,6 +695,55 @@ def confirm_admin_delete_dialog():
         st.rerun()
 
 
+# ---------------------------------------------------------------------------
+# ADMIN: delete an entire day's data across every category + output table
+# ---------------------------------------------------------------------------
+def delete_entire_day(entry_date: date):
+    for cat in CATEGORIES.values():
+        supabase.table(cat["table"]).delete().eq("entry_date", str(entry_date)).execute()
+    supabase.table(OUTPUT_TABLE).delete().eq("entry_date", str(entry_date)).execute()
+
+
+def render_delete_day_section(entry_date: date):
+    st.markdown("---")
+    with st.expander("🗑️ Delete this entire day's data (all categories + output)"):
+        st.warning(
+            f"This permanently deletes **all 6 category tables' data and the "
+            f"combined output** for **{entry_date}**. This cannot be undone."
+        )
+        if st.button(
+            "Delete ALL data for this date", key="delete_day_btn",
+            use_container_width=True,
+        ):
+            st.session_state["pending_delete_day"] = entry_date
+            st.rerun()
+
+    if st.session_state.get("pending_delete_day") == entry_date:
+        confirm_delete_day_dialog()
+
+
+@st.dialog("Confirm Full Day Deletion")
+def confirm_delete_day_dialog():
+    entry_date = st.session_state["pending_delete_day"]
+    st.write(
+        f"Sure want to delete **all** Stock, Hotel Sales, Dokan Sales, "
+        f"Cashflow, Expense, Personal Dhar, and Output data for "
+        f"**{entry_date}**? This cannot be undone."
+    )
+    col1, col2 = st.columns(2)
+    if col1.button("Yes, Delete Everything", use_container_width=True):
+        try:
+            delete_entire_day(entry_date)
+            set_flash("success", f"All data for {entry_date} has been deleted.")
+        except Exception as e:
+            set_flash("error", f"Failed to delete data for {entry_date}: {e}")
+        st.session_state.pop("pending_delete_day", None)
+        st.rerun()
+    if col2.button("Cancel", use_container_width=True):
+        st.session_state.pop("pending_delete_day", None)
+        st.rerun()
+
+
 def show_output_totals(row: dict):
     if not row:
         return
@@ -798,6 +847,8 @@ def admin_view():
             show_output_totals(output_row)
         else:
             st.info("No output data for this date yet.")
+
+        render_delete_day_section(selected_date)
 
     with tab2:
         source_options = {category_badge_label(k): cat["table"] for k, cat in CATEGORIES.items()}
