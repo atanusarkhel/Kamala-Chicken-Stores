@@ -464,7 +464,7 @@ def render_category_submit_section(cat_key: str, entry_date: date):
 
     label_prefix = "✅" if locked else "🚩"
 
-    with st.expander(f"{label_prefix} {cat['label']}", expanded=False):
+    with st.expander(f"{label_prefix} {category_badge_label(cat_key)}", expanded=False):
         if locked:
             st.info(f"Data for {entry_date} is already submitted and locked.")
         for subcat, fields in cat["subcats"].items():
@@ -489,6 +489,11 @@ def render_category_submit_section(cat_key: str, entry_date: date):
 
 
 MANDATORY_CATEGORIES = [k for k in CATEGORIES if k != "personal_dhar"]
+
+
+def category_badge_label(cat_key: str) -> str:
+    tag = "Mandatory" if cat_key in MANDATORY_CATEGORIES else "Optional"
+    return f"{CATEGORIES[cat_key]['label']} ({tag})"
 
 
 def render_calculate_section(entry_date: date):
@@ -580,7 +585,7 @@ def render_admin_category_section(cat_key: str, entry_date: date):
     scope = f"admin_{cat_key}_{entry_date}"
 
     label_prefix = "✅" if existing else "🚩"
-    with st.expander(f"{label_prefix} {cat['label']}", expanded=False):
+    with st.expander(f"{label_prefix} {category_badge_label(cat_key)}", expanded=False):
         for subcat, fields in cat["subcats"].items():
             if subcat:
                 st.markdown(f"**{subcat}**")
@@ -796,7 +801,7 @@ def admin_view():
             st.info("No output data for this date yet.")
 
     with tab2:
-        source_options = {cat["label"]: cat["table"] for cat in CATEGORIES.values()}
+        source_options = {category_badge_label(k): cat["table"] for k, cat in CATEGORIES.items()}
         source_options["Output (Metrics)"] = OUTPUT_TABLE
         source_label = st.selectbox("Data source to compare", list(source_options.keys()))
         table_name = source_options[source_label]
