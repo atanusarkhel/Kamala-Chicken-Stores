@@ -492,8 +492,8 @@ MANDATORY_CATEGORIES = [k for k in CATEGORIES if k != "personal_dhar"]
 
 
 def category_badge_label(cat_key: str) -> str:
-    tag = "Mandatory" if cat_key in MANDATORY_CATEGORIES else "Optional"
-    return f"{CATEGORIES[cat_key]['label']} ({tag})"
+    label = CATEGORIES[cat_key]["label"]
+    return f"{label} *" if cat_key in MANDATORY_CATEGORIES else label
 
 
 def render_calculate_section(entry_date: date):
@@ -552,9 +552,10 @@ def business_view():
     inject_calculate_button_style()
     st.title("📝 Business Data Entry")
 
-    tab1, tab2 = st.tabs(["Add Entry", "View My Input Data (Read-only)"])
+    tab1, tab2 = st.tabs(["Add Entry", "Monthly Input Overview"])
 
     with tab1:
+        st.caption("* mandatory category")
         entry_date = st.date_input("Date", value=today_ist(), key="shared_entry_date")
         for cat_key in CATEGORIES:
             render_category_submit_section(cat_key, entry_date)
@@ -562,19 +563,7 @@ def business_view():
         render_calculate_section(entry_date)
 
     with tab2:
-        view_date = st.date_input("Select date", value=today_ist(), key="business_view_date")
-        username = st.session_state["username"].strip()
-
-        any_data = False
-        for cat_key, cat in CATEGORIES.items():
-            row = fetch_category_row(cat["table"], view_date)
-            if row and row.get("submitted_by", "").strip().lower() == username.lower():
-                any_data = True
-                st.subheader(cat["label"])
-                st.dataframe(format_timestamps_ist([row]), use_container_width=True)
-
-        if not any_data:
-            st.info("No input data found for this date.")
+        render_monthly_overview()
 
 # ---------------------------------------------------------------------------
 # ADMIN: per-category save (always editable) + delete + combined output
@@ -721,6 +710,7 @@ def render_monthly_overview():
 
     st.write("Pick any date in the month you want to review:")
     picked = st.date_input("Month", value=today_ist(), key="monthly_overview_date")
+    st.caption("* mandatory category")
 
     year, month = picked.year, picked.month
     last_day_num = calendar.monthrange(year, month)[1]
@@ -744,13 +734,12 @@ def render_monthly_overview():
 
         date_str = str(this_date)
         row = {"Date": date_str}
-        missing_mandatory = []
+        missing_mandatory = False
         for cat_key in CATEGORIES:
-            cat = CATEGORIES[cat_key]
             present = date_str in dates_by_cat[cat_key]
-            row[cat["label"]] = "✅" if present else "🚩"
+            row[category_badge_label(cat_key)] = "✅" if present else "🚩"
             if cat_key in MANDATORY_CATEGORIES and not present:
-                missing_mandatory.append(cat["label"])
+                missing_mandatory = True
 
         info = output_info.get(date_str)
         if info:
@@ -762,20 +751,29 @@ def render_monthly_overview():
             row["Entered By"] = ""
             row["Entered At (IST)"] = ""
 
-        row["Missing (mandatory)"] = ", ".join(missing_mandatory) if missing_mandatory else "—"
+        row["_complete"] = not missing_mandatory
         rows.append(row)
 
     if not rows:
         st.info("No days to show yet for this month.")
         return
 
-    complete_days = sum(1 for r in rows if r["Missing (mandatory)"] == "—")
+    complete_days = sum(1 for r in rows if r["_complete"])
     incomplete_days = len(rows) - complete_days
     c1, c2 = st.columns(2)
     c1.metric("Complete days", complete_days)
     c2.metric("Incomplete days", incomplete_days)
 
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    display_rows = [{k: v for k, v in r.items() if k != "_complete"} for r in rows]
+
+    st.dataframe(
+        display_rows,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Entered At (IST)": st.column_config.TextColumn(width="large"),
+        },
+    )
 
 
 def admin_view():
@@ -783,12 +781,13 @@ def admin_view():
     show_flash()
     st.title("📊 Admin Dashboard")
 
-    tab1, tab2, tab3 = st.tabs(["Single Date View", "Compare Two Dates", "Monthly Overview"])
+    tab1, tab2, tab3 = st.tabs(["Single Date View", "Compare Two Dates", "Monthly Input Overview"])
 
     with tab1:
         selected_date = st.date_input("Select date", value=today_ist(), key="single_date")
 
         st.subheader("Input data by category")
+        st.caption("* mandatory category")
         for cat_key in CATEGORIES:
             render_admin_category_section(cat_key, selected_date)
 
