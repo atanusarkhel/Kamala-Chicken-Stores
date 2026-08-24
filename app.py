@@ -298,6 +298,17 @@ def fetch_category_row(table_name: str, entry_date: date):
     return result.data[0] if result.data else None
 
 
+def fetch_dates_in_range(table_name: str, start_date: date, end_date: date) -> set:
+    result = (
+        supabase.table(table_name)
+        .select("entry_date")
+        .gte("entry_date", str(start_date))
+        .lte("entry_date", str(end_date))
+        .execute()
+    )
+    return {r["entry_date"] for r in result.data}
+
+
 def format_timestamps_ist(rows: list) -> list:
     """Supabase/PostgREST always returns timestamptz values as UTC in JSON,
     regardless of what timezone was used when the value was written. The
@@ -562,7 +573,8 @@ def render_admin_category_section(cat_key: str, entry_date: date):
     cat = CATEGORIES[cat_key]
     existing = fetch_category_row(cat["table"], entry_date)
 
-    with st.expander(f"📁 {cat['label']}", expanded=False):
+    label_prefix = "✅" if existing else "🚩"
+    with st.expander(f"{label_prefix} {cat['label']}", expanded=False):
         for subcat, fields in cat["subcats"].items():
             if subcat:
                 st.markdown(f"**{subcat}**")
@@ -693,12 +705,64 @@ def show_output_totals(row: dict):
     c4.metric("Estimated Profit", f"{row['estimated_profit']:,.2f}")
 
 
+def render_monthly_overview():
+    import calendar
+
+    st.write("Pick any date in the month you want to review:")
+    picked = st.date_input("Month", value=today_ist(), key="monthly_overview_date")
+
+    year, month = picked.year, picked.month
+    last_day_num = calendar.monthrange(year, month)[1]
+    month_start = date(year, month, 1)
+    month_end = date(year, month, last_day_num)
+    # Don't flag future days as "missing" — only check up to today.
+    check_end = min(month_end, today_ist())
+
+    # One query per table for the whole month, instead of per-day queries.
+    dates_by_cat = {
+        cat_key: fetch_dates_in_range(cat["table"], month_start, month_end)
+        for cat_key, cat in CATEGORIES.items()
+    }
+    output_dates = fetch_dates_in_range(OUTPUT_TABLE, month_start, month_end)
+
+    rows = []
+    for day_num in range(1, last_day_num + 1):
+        this_date = date(year, month, day_num)
+        if this_date > check_end:
+            break  # skip future days entirely
+
+        date_str = str(this_date)
+        row = {"Date": date_str}
+        missing_mandatory = []
+        for cat_key in CATEGORIES:
+            cat = CATEGORIES[cat_key]
+            present = date_str in dates_by_cat[cat_key]
+            row[cat["label"]] = "✅" if present else "🚩"
+            if cat_key in MANDATORY_CATEGORIES and not present:
+                missing_mandatory.append(cat["label"])
+        row["Output"] = "✅" if date_str in output_dates else "🚩"
+        row["Missing (mandatory)"] = ", ".join(missing_mandatory) if missing_mandatory else "—"
+        rows.append(row)
+
+    if not rows:
+        st.info("No days to show yet for this month.")
+        return
+
+    complete_days = sum(1 for r in rows if r["Missing (mandatory)"] == "—")
+    incomplete_days = len(rows) - complete_days
+    c1, c2 = st.columns(2)
+    c1.metric("Complete days", complete_days)
+    c2.metric("Incomplete days", incomplete_days)
+
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+
 def admin_view():
     show_banner()
     show_flash()
     st.title("📊 Admin Dashboard")
 
-    tab1, tab2 = st.tabs(["Single Date View", "Compare Two Dates"])
+    tab1, tab2, tab3 = st.tabs(["Single Date View", "Compare Two Dates", "Monthly Overview"])
 
     with tab1:
         selected_date = st.date_input("Select date", value=today_ist(), key="single_date")
@@ -747,6 +811,9 @@ def admin_view():
                     show_output_totals(row_b)
             else:
                 st.info("No entry for this date.")
+
+    with tab3:
+        render_monthly_overview()
 
 # ---------------------------------------------------------------------------
 # MAIN ROUTING
